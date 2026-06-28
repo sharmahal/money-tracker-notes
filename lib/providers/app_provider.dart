@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/bank_account.dart';
@@ -6,8 +8,10 @@ import '../models/category_info.dart';
 import '../models/custom_category.dart';
 import '../models/custom_rule.dart';
 import '../models/transaction.dart';
+import '../services/auth_service.dart';
 import '../services/database_service.dart';
 import '../services/sms_service.dart';
+import '../services/sync_service.dart';
 
 class AppProvider extends ChangeNotifier {
   final _db = DatabaseService();
@@ -21,6 +25,79 @@ class AppProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   bool _includeNoAccount = false;
+
+  // ── Auth & sync state ─────────────────────────────────────────────────────
+  User? _currentUser;
+  bool _syncing = false;
+  DateTime? _lastSyncedAt;
+  StreamSubscription<User?>? _authSub;
+
+  User? get currentUser => _currentUser;
+  bool get syncing => _syncing;
+  DateTime? get lastSyncedAt => _lastSyncedAt;
+
+  AppProvider() {
+    _authSub = AuthService.authStateChanges.listen((user) {
+      _currentUser = user;
+      if (user != null) _fetchLastSyncedAt();
+      notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetchLastSyncedAt() async {
+    _lastSyncedAt = await SyncService.lastSyncedAt();
+    notifyListeners();
+  }
+
+  Future<bool> signInWithGoogle() async {
+    final user = await AuthService.signInWithGoogle();
+    return user != null;
+  }
+
+  Future<void> signOut() async {
+    await AuthService.signOut();
+    _lastSyncedAt = null;
+    notifyListeners();
+  }
+
+  Future<String> pushToCloud() async {
+    _syncing = true;
+    notifyListeners();
+    try {
+      final result = await SyncService.push();
+      _lastSyncedAt = DateTime.now();
+      return result.message;
+    } catch (e) {
+      return 'Push failed: $e';
+    } finally {
+      _syncing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String> pullFromCloud() async {
+    _syncing = true;
+    notifyListeners();
+    try {
+      final result = await SyncService.pull();
+      await loadMonth(_selectedMonth);
+      await loadAccounts();
+      await loadRules();
+      await loadCustomCategories();
+      return result.message;
+    } catch (e) {
+      return 'Pull failed: $e';
+    } finally {
+      _syncing = false;
+      notifyListeners();
+    }
+  }
 
   DateTime get selectedMonth => _selectedMonth;
   List<BankAccount> get accounts => _accounts;

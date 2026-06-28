@@ -143,6 +143,22 @@ class DatabaseService {
     await database.delete('transactions');
   }
 
+  Future<List<Transaction>> queryAll() async {
+    final database = await db;
+    final maps = await database.query('transactions', orderBy: 'date ASC');
+    return maps.map(Transaction.fromMap).toList();
+  }
+
+  Future<void> upsertRules(List<CustomRule> rules) async {
+    final database = await db;
+    final batch = database.batch();
+    for (final rule in rules) {
+      batch.insert('custom_rules', rule.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    await batch.commit();
+  }
+
   // ── Settings ─────────────────────────────────────────────────────────────────
 
   Future<String?> getSetting(String key) async {

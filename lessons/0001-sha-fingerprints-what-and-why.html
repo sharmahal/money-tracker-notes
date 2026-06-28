@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lesson 1 — SHA Fingerprints: What & Why</title>
+  <link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+<div class="lesson-container">
+
+  <div class="lesson-header">
+    <div class="lesson-number">Lesson 1 of ∞</div>
+    <h1>SHA Fingerprints: What They Are & Why Firebase Wants One</h1>
+    <p class="lesson-subtitle">A conceptual foundation — no math required.</p>
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <h2>The one-sentence version</h2>
+  <p>
+    A <strong>SHA fingerprint</strong> is a short, unique "summary" of a piece of data —
+    computed by a <em>cryptographic hash function</em> — that lets a second party verify
+    the data came from who they think it did, without ever seeing the original data.
+  </p>
+
+  <!-- ─────────────────────────────────────── -->
+  <h2>What is a hash function?</h2>
+  <p>
+    Think of a hash function as a <strong>meat grinder for data</strong>. You push any
+    amount of data in — a file, a certificate, a password, a message — and out comes a
+    fixed-size blob of bytes called a <em>digest</em> or <em>hash</em>.
+  </p>
+
+  <div class="diagram">
+    "Hello, World!"  →  [ SHA-256 ]  →  <span style="color:#7c3aed">dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986d</span>
+    <br/>
+    "Hello, World."  →  [ SHA-256 ]  →  <span style="color:#1a56db">f4bb1975bf1f81f76ce824f7536c1e101a8060a632a52289d530a6f600d52c92</span>
+    <br/><br/>
+    <small style="color:#555">One character changes → completely different output. This is called the <strong>avalanche effect</strong>.</small>
+  </div>
+
+  <p>SHA (Secure Hash Algorithm) is a <em>family</em> of such functions standardised by NIST:</p>
+  <ul>
+    <li><strong>SHA-1</strong> — 160-bit output (40 hex characters). Older, still used in Android signing.</li>
+    <li><strong>SHA-256</strong> — 256-bit output (64 hex characters). The modern standard.</li>
+  </ul>
+
+  <!-- ─────────────────────────────────────── -->
+  <h2>Three properties that make SHA useful for security</h2>
+
+  <h3>1. Deterministic</h3>
+  <p>The same input <em>always</em> produces the same output. This is what lets a remote server
+  recompute the hash and compare it to yours.</p>
+
+  <h3>2. One-way (pre-image resistant)</h3>
+  <p>Given a hash, it is computationally infeasible to reverse it back to the original input.
+  Running SHA on your password before storing it means even a stolen database can't reveal
+  the password itself.</p>
+
+  <h3>3. Collision resistant</h3>
+  <p>It is computationally infeasible to find two <em>different</em> inputs that produce the
+  <em>same</em> hash. (SHA-1 is now considered <em>weak</em> here — that's why SHA-256
+  is preferred for new work.)</p>
+
+  <div class="callout key">
+    <div class="callout-title">Key insight</div>
+    These three properties together mean a hash acts as a <strong>tamper-evident seal</strong>.
+    If even one byte of the original data changes, the hash will be completely different.
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <h2>What exactly is a "fingerprint"?</h2>
+  <p>
+    A <strong>fingerprint</strong> is just the SHA hash of a <em>digital certificate</em>
+    (specifically its public key). When you build and sign an Android app:
+  </p>
+  <ol>
+    <li>Android generates or you provide a <strong>keystore</strong> — a file containing
+        a <em>private key</em> and a <em>certificate</em> (which contains the matching public key).</li>
+    <li>Every APK you produce is <strong>signed</strong> with that private key.</li>
+    <li>Android can verify the signature using the certificate's public key.</li>
+    <li>The <strong>SHA fingerprint</strong> is the SHA-1 or SHA-256 hash of that certificate —
+        a short, shareable identifier for "which key signed this app."</li>
+  </ol>
+
+  <div class="diagram">
+    your keystore
+    ├── private key  →  used to SIGN each APK
+    └── certificate  →  SHA-1/SHA-256 of this = <strong>fingerprint</strong>
+                        (safe to share publicly)
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <h2>Why Firebase (and Google) asks for it</h2>
+  <p>
+    When you enable certain Firebase features (Google Sign-In, App Check, Dynamic Links,
+    Phone Auth), Firebase needs to know:
+    <em>"Is this request actually coming from my app, or from an impersonator?"</em>
+  </p>
+  <p>
+    You pre-register your app's SHA fingerprint in the Firebase console. At runtime,
+    Firebase's SDK presents the fingerprint of the certificate that signed the running APK.
+    Firebase checks: <strong>does this fingerprint match what the developer registered?</strong>
+    If yes → trusted. If no → blocked.
+  </p>
+
+  <div class="diagram">
+    Developer  →  Firebase Console  →  registers SHA-256: <span style="color:#1a56db">AB:CD:EF:...</span>
+    <br/><br/>
+    User installs APK signed with the same key
+    <br/>
+    Firebase SDK  →  reads APK certificate SHA-256  →  <span style="color:#1a56db">AB:CD:EF:...</span>  ✓ match → OK
+    <br/><br/>
+    Attacker ships a fake APK signed with their own key
+    <br/>
+    Firebase SDK  →  reads APK certificate SHA-256  →  <span style="color:#e02020">99:ZZ:11:...</span>  ✗ mismatch → blocked
+  </div>
+
+  <div class="callout note">
+    <div class="callout-title">Debug vs Release</div>
+    Android Studio auto-generates a <strong>debug keystore</strong> at
+    <code>~/.android/debug.keystore</code>. Its SHA fingerprint is what you add to
+    Firebase for local testing. Your release APK uses a different keystore —
+    you must add <em>both</em> fingerprints to Firebase, or release builds won't work.
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <h2>Other places SHA fingerprints appear</h2>
+  <ul>
+    <li><strong>TLS/HTTPS certificates</strong> — browsers show the SHA-256 fingerprint
+        of a site's certificate so you can verify you're talking to the right server.</li>
+    <li><strong>Git commits</strong> — every commit ID is a SHA-1 hash of the commit's
+        content (author, message, parent hash, file tree).</li>
+    <li><strong>File integrity checks</strong> — software downloads publish SHA-256 hashes
+        so you can verify the file wasn't corrupted or tampered with.</li>
+    <li><strong>Google Play App Signing</strong> — once you opt in, Google manages your
+        release key and shows you its fingerprint in the Play Console for use in Firebase.</li>
+  </ul>
+
+  <!-- ─────────────────────────────────────── -->
+  <h2>How to get your app's fingerprint (quick reference)</h2>
+
+  <h3>Debug keystore (for Firebase local testing)</h3>
+  <pre><code>keytool -list -v \
+  -keystore ~/.android/debug.keystore \
+  -alias androiddebugkey \
+  -storepass android -keypass android</code></pre>
+
+  <h3>Release keystore</h3>
+  <pre><code>keytool -list -v \
+  -keystore /path/to/your/release.keystore \
+  -alias YOUR_KEY_ALIAS</code></pre>
+
+  <p>Look for the <code>SHA1:</code> and <code>SHA256:</code> lines in the output.
+  Those colon-separated hex values are the fingerprints you paste into Firebase.</p>
+
+  <!-- ─────────────────────────────────────── -->
+  <h2>Check your understanding</h2>
+
+  <div class="quiz" id="q1">
+    <p class="quiz-question">1. Firebase requires your SHA fingerprint so it can…</p>
+    <ul class="quiz-options">
+      <li><label><input type="radio" name="q1" value="a"> decrypt your app's network traffic</label></li>
+      <li><label><input type="radio" name="q1" value="b"> verify the APK was signed by you, not an impersonator</label></li>
+      <li><label><input type="radio" name="q1" value="c"> compress your APK before distribution</label></li>
+      <li><label><input type="radio" name="q1" value="d"> store your private key securely in the cloud</label></li>
+    </ul>
+    <button class="quiz-btn" onclick="checkQ('q1','b','Firebase compares the fingerprint of the certificate that signed the running APK against what you pre-registered. If they match, the request is trusted.')">Check</button>
+    <div class="quiz-feedback" id="q1-feedback"></div>
+  </div>
+
+  <div class="quiz" id="q2">
+    <p class="quiz-question">2. You change one character in a file and re-hash it with SHA-256. The new hash will be…</p>
+    <ul class="quiz-options">
+      <li><label><input type="radio" name="q2" value="a"> almost identical, with only one bit different</label></li>
+      <li><label><input type="radio" name="q2" value="b"> one character longer than before</label></li>
+      <li><label><input type="radio" name="q2" value="c"> completely different (avalanche effect)</label></li>
+      <li><label><input type="radio" name="q2" value="d"> the same, since the file is mostly unchanged</label></li>
+    </ul>
+    <button class="quiz-btn" onclick="checkQ('q2','c','This is the avalanche effect — a tiny change in input produces an entirely different output. It is what makes hashes reliable as tamper-evident seals.')">Check</button>
+    <div class="quiz-feedback" id="q2-feedback"></div>
+  </div>
+
+  <div class="quiz" id="q3">
+    <p class="quiz-question">3. Why must you add both your debug and release SHA fingerprints to Firebase?</p>
+    <ul class="quiz-options">
+      <li><label><input type="radio" name="q3" value="a"> Firebase stores two copies for redundancy in case one is lost</label></li>
+      <li><label><input type="radio" name="q3" value="b"> Debug and release APKs are signed by different keys, so different fingerprints</label></li>
+      <li><label><input type="radio" name="q3" value="c"> The debug fingerprint expires after 24 hours and needs a backup</label></li>
+      <li><label><input type="radio" name="q3" value="d"> SHA-1 is needed for debug and SHA-256 only works for release</label></li>
+    </ul>
+    <button class="quiz-btn" onclick="checkQ('q3','b','Android Studio auto-generates a debug keystore (~/.android/debug.keystore) and your release APK uses a separate keystore you control. Two different keys → two different fingerprints → both need to be registered.')">Check</button>
+    <div class="quiz-feedback" id="q3-feedback"></div>
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <div class="callout win">
+    <div class="callout-title">What you just learned</div>
+    SHA is a one-way, tamper-evident hash function. A fingerprint is the SHA hash of a
+    certificate. Firebase uses your fingerprint to confirm that APKs claiming to be your
+    app were actually signed by your key — not anyone else's.
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <div class="lesson-footer">
+    <p>
+      <strong>Recommended primary source:</strong>
+      <a href="https://www.youtube.com/watch?v=DMtFhACPnTY" target="_blank">
+        Computerphile — SHA: Secure Hashing Algorithm (YouTube, 10 min)
+      </a> — best visual explainer of how SHA-256 works internally.
+    </p>
+    <p style="margin-top:0.75rem">
+      <strong>Next steps:</strong> Ask your teacher agent (<code>/teach</code>) about
+      "what happens when I use Google Play App Signing — whose fingerprint do I register?"
+      or "explain SHA-1 vs SHA-256 — when does each matter?"
+    </p>
+    <p style="margin-top:0.75rem; color:#888">
+      Questions? Ask your agent — it's your teacher.
+      Something unclear? Say <em>"explain [concept] differently"</em>.
+    </p>
+  </div>
+
+</div>
+
+<script>
+function checkQ(qId, correct, explanation) {
+  const selected = document.querySelector(`input[name="${qId}"]:checked`);
+  const fb = document.getElementById(`${qId}-feedback`);
+  if (!selected) { fb.style.display = 'block'; fb.className = 'quiz-feedback incorrect'; fb.textContent = 'Please select an answer first.'; return; }
+  fb.style.display = 'block';
+  if (selected.value === correct) {
+    fb.className = 'quiz-feedback correct';
+    fb.textContent = '✓ Correct. ' + explanation;
+  } else {
+    fb.className = 'quiz-feedback incorrect';
+    fb.textContent = '✗ Not quite. ' + explanation;
+  }
+}
+</script>
+</body>
+</html>

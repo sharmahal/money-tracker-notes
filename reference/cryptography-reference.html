@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cryptography Reference — SHA, Certificates, TLS, SSH</title>
+  <link rel="stylesheet" href="../assets/styles.css" />
+  <style>
+    /* ── Reference-specific overrides ── */
+    body { font-size: 16px; }
+    .ref-section { margin: 2.5rem 0; }
+
+    /* ── Flow diagram ── */
+    .flow { display: flex; flex-direction: column; gap: 0; margin: 1.25rem 0; }
+    .flow-row { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+    .flow-box {
+      background: var(--code-bg);
+      border: 1.5px solid var(--border);
+      border-radius: 6px;
+      padding: 0.45rem 0.8rem;
+      font-family: var(--font-sans);
+      font-size: 0.82rem;
+      line-height: 1.35;
+      white-space: nowrap;
+    }
+    .flow-box.pub  { background: #eff6ff; border-color: #93c5fd; }
+    .flow-box.priv { background: #fef2f2; border-color: #fca5a5; }
+    .flow-box.cert { background: #f0fdf4; border-color: #86efac; }
+    .flow-box.hash { background: #fefce8; border-color: #fde047; }
+    .flow-box.ok   { background: #d1fae5; border-color: #10b981; font-weight: 600; color: #065f46; }
+    .flow-box.fail { background: #fee2e2; border-color: #f87171; font-weight: 600; color: #991b1b; }
+    .flow-box.note { background: var(--warn-light); border-color: var(--warn); font-style: italic; }
+    .arr { padding: 0 0.4rem; color: var(--muted); font-size: 1rem; flex-shrink: 0; }
+    .arr.down { padding: 0.1rem 0 0.1rem 1rem; }
+    .flow-label {
+      font-family: var(--font-sans);
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin: 0.6rem 0 0.2rem;
+    }
+
+    /* ── Two-column anatomy ── */
+    .anatomy {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    @media (max-width: 600px) { .anatomy { grid-template-columns: 1fr; } }
+    .anatomy-box {
+      border: 1.5px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .anatomy-header {
+      background: var(--code-bg);
+      padding: 0.4rem 0.75rem;
+      font-family: var(--font-sans);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .anatomy-body { padding: 0.6rem 0.75rem; font-family: var(--font-sans); font-size: 0.85rem; line-height: 1.7; }
+    .anatomy-body li { list-style: none; margin: 0; padding: 0; }
+    .anatomy-body li::before { content: "·  "; color: var(--muted); }
+
+    /* ── Comparison table ── */
+    .comp-table { width: 100%; border-collapse: collapse; font-family: var(--font-sans); font-size: 0.82rem; margin: 1rem 0; }
+    .comp-table th { background: var(--code-bg); padding: 0.5rem 0.75rem; text-align: left; font-weight: 700; border: 1px solid var(--border); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .comp-table td { padding: 0.5rem 0.75rem; border: 1px solid var(--border); vertical-align: top; line-height: 1.5; }
+    .comp-table tr:nth-child(even) td { background: #fafafa; }
+
+    /* ── Key legend ── */
+    .legend { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 0.75rem 0; }
+    .legend-item { display: flex; align-items: center; gap: 0.35rem; font-family: var(--font-sans); font-size: 0.78rem; }
+    .legend-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+
+    /* ── Section headers ── */
+    .ref-number { display: inline-block; background: var(--text); color: white; border-radius: 4px; padding: 0.1rem 0.5rem; font-family: var(--font-sans); font-size: 0.72rem; font-weight: 700; margin-right: 0.5rem; vertical-align: middle; }
+
+    /* ── Print ── */
+    @media print {
+      .ref-section { page-break-inside: avoid; }
+      h2 { page-break-after: avoid; }
+    }
+  </style>
+</head>
+<body>
+<div class="lesson-container" style="max-width:780px">
+
+  <div class="lesson-header">
+    <div class="lesson-number">Reference Document &nbsp;·&nbsp; <a href="../lessons/0001-sha-fingerprints-what-and-why.html">Lesson 1</a> &nbsp;·&nbsp; <a href="../lessons/0002-public-key-cryptography.html">Lesson 2</a></div>
+    <h1>Cryptography Reference</h1>
+    <p class="lesson-subtitle">SHA · Certificates · Fingerprints · Android · SSH · TLS — everything in one place.</p>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#93c5fd;border:1.5px solid #93c5fd"></div> Public key / public data</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fca5a5;border:1.5px solid #fca5a5"></div> Private key / secret</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#86efac;border:1.5px solid #86efac"></div> Certificate</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fde047;border:1.5px solid #fde047"></div> Hash / fingerprint</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#d1fae5;border:1.5px solid #10b981"></div> Verified ✓</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fee2e2;border:1.5px solid #f87171"></div> Rejected ✗</div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="ref-section">
+    <h2><span class="ref-number">1</span> SHA — Cryptographic Hash Function</h2>
+    <p>Compresses <em>any</em> input into a fixed-size digest. Three properties make it useful for security:</p>
+
+    <div class="anatomy">
+      <div class="anatomy-box">
+        <div class="anatomy-header">Properties</div>
+        <div class="anatomy-body">
+          <ul>
+            <li><strong>Deterministic</strong> — same input → same output always</li>
+            <li><strong>One-way</strong> — cannot reverse a hash to get the input</li>
+            <li><strong>Avalanche effect</strong> — one byte changes → completely different output</li>
+            <li><strong>Collision resistant</strong> — can't find two inputs with same hash</li>
+          </ul>
+        </div>
+      </div>
+      <div class="anatomy-box">
+        <div class="anatomy-header">Sizes</div>
+        <div class="anatomy-body">
+          <ul>
+            <li><strong>SHA-1</strong> — 160-bit · 40 hex chars · older, weakening</li>
+            <li><strong>SHA-256</strong> — 256-bit · 64 hex chars · modern standard</li>
+          </ul>
+          <br/>
+          <strong>Two roles SHA plays:</strong>
+          <ul>
+            <li><strong>Security primitive</strong> — compresses data before signing</li>
+            <li><strong>Identifier</strong> — fingerprint = short name for a certificate</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-box">"Hello, World!"</div>
+        <div class="arr">→ SHA-256 →</div>
+        <div class="flow-box hash">dffd6021bb2bd5b0af67…</div>
+      </div>
+      <div style="height:0.4rem"></div>
+      <div class="flow-row">
+        <div class="flow-box">"Hello, World<strong>.</strong>"</div>
+        <div class="arr">→ SHA-256 →</div>
+        <div class="flow-box hash">f4bb1975bf1f81f76ce8…</div>
+        <div class="arr"></div>
+        <div class="flow-box note">one char changed → completely different</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="ref-section">
+    <h2><span class="ref-number">2</span> Asymmetric Key Pair</h2>
+
+    <div class="anatomy">
+      <div class="anatomy-box">
+        <div class="anatomy-header" style="background:#fef2f2">🔑 Private Key — keep secret</div>
+        <div class="anatomy-body">
+          <ul>
+            <li>Never shared, never leaves your machine</li>
+            <li><strong>Encrypts</strong> things the public key can decrypt — called <strong>signing</strong></li>
+            <li><strong>Decrypts</strong> things encrypted with the public key — called <strong>decryption</strong></li>
+          </ul>
+        </div>
+      </div>
+      <div class="anatomy-box">
+        <div class="anatomy-header" style="background:#eff6ff">🔓 Public Key — share freely</div>
+        <div class="anatomy-body">
+          <ul>
+            <li>Safe to publish, embed in APKs, send to servers</li>
+            <li><strong>Decrypts</strong> things encrypted with the private key — called <strong>verifying</strong></li>
+            <li><strong>Encrypts</strong> things only the private key can decrypt — called <strong>encryption</strong></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow">
+      <div class="flow-label">Direction 1 — Authentication (signing)</div>
+      <div class="flow-row">
+        <div class="flow-box priv">private key</div><div class="arr">signs data →</div>
+        <div class="flow-box hash">signature</div><div class="arr">→ anyone verifies with →</div>
+        <div class="flow-box pub">public key</div>
+      </div>
+      <div class="flow-label">Direction 2 — Confidentiality (encryption)</div>
+      <div class="flow-row">
+        <div class="flow-box pub">public key</div><div class="arr">encrypts →</div>
+        <div class="flow-box hash">ciphertext</div><div class="arr">→ only decryptable with →</div>
+        <div class="flow-box priv">private key</div>
+      </div>
+    </div>
+
+    <div class="callout note" style="margin-top:1rem">
+      <div class="callout-title">Asymmetric crypto is slow</div>
+      Never used to encrypt bulk data. TLS uses it only for the handshake (authentication + key exchange), then switches to fast symmetric encryption (AES) for actual data.
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="ref-section">
+    <h2><span class="ref-number">3</span> Certificate Anatomy</h2>
+    <p>An X.509 certificate is a structured file. It contains the public key, proves who it belongs to, and proves it hasn't been tampered with.</p>
+
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-box cert" style="width:100%;white-space:normal">
+          <strong>CERTIFICATE FILE</strong><br/>
+          <span style="display:block;margin-top:0.4rem;padding:0.4rem 0.6rem;background:#f0fdf4;border-radius:4px;font-family:var(--font-mono);font-size:0.8rem;line-height:1.8">
+            DATA BLOCK<br/>
+            &nbsp;&nbsp;├── public key bytes<br/>
+            &nbsp;&nbsp;├── subject (owner name, org)<br/>
+            &nbsp;&nbsp;├── issuer (who signed this cert)<br/>
+            &nbsp;&nbsp;└── valid from / valid until<br/>
+            ──────────────────────────────<br/>
+            SIGNATURE = encrypt( SHA(data block above) , issuer's private key )
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow" style="margin-top:0.75rem">
+      <div class="flow-label">Fingerprint is derived FROM the certificate — not stored inside it</div>
+      <div class="flow-row">
+        <div class="flow-box cert">certificate file</div>
+        <div class="arr">→ SHA-256 →</div>
+        <div class="flow-box hash">fingerprint (64 hex chars)</div>
+        <div class="arr">=</div>
+        <div class="flow-box note">short unique name for this certificate</div>
+      </div>
+    </div>
+
+    <div class="anatomy" style="margin-top:1rem">
+      <div class="anatomy-box">
+        <div class="anatomy-header">Self-signed (Android keystores)</div>
+        <div class="anatomy-body">
+          <ul>
+            <li>You are both issuer and subject</li>
+            <li>Your own private key signs the cert</li>
+            <li>No third party involved</li>
+            <li>Firebase only checks: "does fingerprint match what I registered?"</li>
+          </ul>
+        </div>
+      </div>
+      <div class="anatomy-box">
+        <div class="anatomy-header">CA-signed (HTTPS websites)</div>
+        <div class="anatomy-body">
+          <ul>
+            <li>CA (e.g. Let's Encrypt) signs your cert after verifying domain ownership</li>
+            <li>Browser trusts CA (pre-installed root store)</li>
+            <li>Browser transitively trusts your site</li>
+            <li>Needed when there's no prior registration step</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="ref-section">
+    <h2><span class="ref-number">4</span> Android APK Signing + Firebase</h2>
+
+    <div class="flow-label">Step A — keytool generates your keystore (one time)</div>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-box">keytool -genkeypair</div>
+        <div class="arr">→</div>
+        <div class="flow-box priv">private key</div>
+        <div class="arr">+</div>
+        <div class="flow-box pub">public key</div>
+        <div class="arr">wrapped in →</div>
+        <div class="flow-box cert">self-signed certificate</div>
+      </div>
+      <div class="arr down">↓ all stored in</div>
+      <div class="flow-row" style="margin-left:1rem">
+        <div class="flow-box">keystore file (.jks)</div>
+        <div class="arr">·</div>
+        <div class="flow-box hash">SHA(certificate) = fingerprint</div>
+        <div class="arr">→ you paste this into →</div>
+        <div class="flow-box">Firebase Console</div>
+      </div>
+    </div>
+
+    <div class="flow-label" style="margin-top:1.25rem">Step B — signing the APK (every build)</div>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-box">APK bytes</div>
+        <div class="arr">→ SHA →</div>
+        <div class="flow-box hash">digest</div>
+        <div class="arr">→ encrypt with →</div>
+        <div class="flow-box priv">private key</div>
+        <div class="arr">→</div>
+        <div class="flow-box hash">APK signature</div>
+        <div class="arr">stored inside APK</div>
+      </div>
+    </div>
+
+    <div class="flow-label" style="margin-top:1.25rem">Step C — runtime verification (two separate jobs)</div>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-box note">Job 1 · Android OS at install time</div>
+      </div>
+      <div class="flow-row" style="margin:0.3rem 0 0 1rem">
+        <div class="flow-box">reads public key from APK</div>
+        <div class="arr">→ decrypts signature →</div>
+        <div class="flow-box hash">SHA(original APK)</div>
+        <div class="arr">vs re-computed</div>
+        <div class="flow-box hash">SHA(current APK)</div>
+        <div class="arr">→</div>
+        <div class="flow-box ok">match ✓ install</div>
+      </div>
+      <div style="height:0.6rem"></div>
+      <div class="flow-row">
+        <div class="flow-box note">Job 2 · Firebase SDK at runtime</div>
+      </div>
+      <div class="flow-row" style="margin:0.3rem 0 0 1rem">
+        <div class="flow-box">asks PackageManager: what cert signed me?</div>
+        <div class="arr">→ SHA →</div>
+        <div class="flow-box hash">fingerprint</div>
+        <div class="arr">→ send to Firebase →</div>
+        <div class="flow-box ok">on approved list ✓</div>
+      </div>
+    </div>
+
+    <div class="flow-label" style="margin-top:1.25rem">Why MITM attacks fail</div>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-box fail">MITM modifies APK bytes</div>
+        <div class="arr">→</div>
+        <div class="flow-box hash">SHA(modified) ≠ SHA(original)</div>
+        <div class="arr">→</div>
+        <div class="flow-box fail">Job 1 rejects at install</div>
+      </div>
+      <div style="height:0.4rem"></div>
+      <div class="flow-row">
+        <div class="flow-box fail">MITM re-signs with own key</div>
+        <div class="arr">→</div>
+        <div class="flow-box hash">different fingerprint</div>
+        <div class="arr">→</div>
+        <div class="flow-box fail">Firebase rejects at Job 2</div>
+      </div>
+      <div style="height:0.4rem"></div>
+      <div class="flow-row">
+        <div class="flow-box fail">MITM copies your certificate</div>
+        <div class="arr">→</div>
+        <div class="flow-box note">certificate is public — no secret in it</div>
+        <div class="arr">→</div>
+        <div class="flow-box ok">harmless</div>
+      </div>
+    </div>
+
+    <div class="callout key" style="margin-top:1rem">
+      <div class="callout-title">The critical distinction</div>
+      The <strong>fingerprint</strong> is your identifier (safe to share). The <strong>private key</strong> is your proof of identity (catastrophic if stolen). Firebase does access control using the fingerprint. Android does cryptographic verification using the full public key already inside the APK.
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="ref-section">
+    <h2><span class="ref-number">5</span> SSH Host Key Verification</h2>
+
+    <div class="flow-label">First connection — human trust bootstrap (fingerprint used here)</div>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-box">server</div>
+        <div class="arr">sends →</div>
+        <div class="flow-box pub">host public key</div>
+        <div class="arr">→ SHA →</div>
+        <div class="flow-box hash">fingerprint shown to you</div>
+      </div>
+      <div class="arr down">↓ you verify out-of-band (GCP Console) and type yes</div>
+      <div class="flow-row" style="margin-left:1rem">
+        <div class="flow-box pub">full public key</div>
+        <div class="arr">stored in</div>
+        <div class="flow-box">~/.ssh/known_hosts</div>
+      </div>
+    </div>
+
+    <div class="flow-label" style="margin-top:1.25rem">Every connection — cryptographic challenge-response (fingerprint not used)</div>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-box">server</div>
+        <div class="arr">signs challenge with →</div>
+        <div class="flow-box priv">host private key</div>
+      </div>
+      <div class="arr down">↓</div>
+      <div class="flow-row" style="margin-left:1rem">
+        <div class="flow-box">your SSH client</div>
+        <div class="arr">verifies with stored →</div>
+        <div class="flow-box pub">host public key</div>
+        <div class="arr">→</div>
+        <div class="flow-box ok">server is real ✓</div>
+      </div>
+      <div class="arr down">↓ if key changed (VM rebuilt or MITM)</div>
+      <div class="flow-row" style="margin-left:1rem">
+        <div class="flow-box fail">stored key ≠ new key → SSH refuses loudly</div>
+      </div>
+    </div>
+
+    <div class="callout note" style="margin-top:1rem">
+      <div class="callout-title">SSH also authenticates YOU to the server</div>
+      You generate an SSH key pair with <code>ssh-keygen</code>. Your public key goes on the server (<code>~/.ssh/authorized_keys</code>). At login: server sends you a challenge, you sign it with your private key, server verifies with your stored public key. Two-way — both sides authenticate each other.
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="ref-section">
+    <h2><span class="ref-number">6</span> TLS / HTTPS</h2>
+
+    <div class="flow-label">Why CA is needed (unlike Android)</div>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-box fail">Self-signed cert: "I am Google, trust me"</div>
+        <div class="arr">→</div>
+        <div class="flow-box fail">circular — anyone can say this</div>
+      </div>
+      <div class="arr" style="padding:0.3rem 0 0.3rem 0.5rem">vs</div>
+      <div class="flow-row">
+        <div class="flow-box cert">CA-signed cert</div>
+        <div class="arr">→</div>
+        <div class="flow-box note">browser trusts pre-installed CA public keys</div>
+        <div class="arr">→</div>
+        <div class="flow-box ok">transitively trusts the site</div>
+      </div>
+    </div>
+
+    <div class="flow-label" style="margin-top:1.25rem">Modern TLS 1.3 handshake (ECDHE — has forward secrecy)</div>
+    <div class="flow">
+      <div class="flow-row"><div class="flow-box" style="width:100%;white-space:normal;font-family:var(--font-mono);font-size:0.8rem;line-height:2">
+        1. Client hello &nbsp;&nbsp;→ "I support these cipher suites"<br/>
+        2. Server hello &nbsp;&nbsp;→ sends <span style="background:#f0fdf4;padding:0 4px;border-radius:3px">certificate</span> (signed by CA)<br/>
+        3. Client verifies → CA chain check → extracts <span style="background:#eff6ff;padding:0 4px;border-radius:3px">server public key</span><br/>
+        4. Key exchange &nbsp;&nbsp;→ both sides run Diffie-Hellman math → shared secret<br/>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;server signs handshake with <span style="background:#fef2f2;padding:0 4px;border-radius:3px">private key</span> → client verifies<br/>
+        5. Encrypted &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ all data encrypted with shared secret (AES)
+      </div></div>
+    </div>
+
+    <div class="anatomy" style="margin-top:1rem">
+      <div class="anatomy-box">
+        <div class="anatomy-header">Old RSA key exchange (deprecated)</div>
+        <div class="anatomy-body">
+          Client encrypts secret with server's public key → server decrypts with private key → shared secret<br/><br/>
+          <span style="color:#991b1b">✗ No forward secrecy</span> — if private key stolen later, all past sessions decryptable
+        </div>
+      </div>
+      <div class="anatomy-box">
+        <div class="anatomy-header">Modern ECDHE (TLS 1.3)</div>
+        <div class="anatomy-body">
+          Both sides compute shared secret via math (secret never transmitted) → server signs to prove identity<br/><br/>
+          <span style="color:#065f46">✓ Forward secrecy</span> — private key theft later can't decrypt past sessions
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-label" style="margin-top:1rem">Where fingerprints appear in TLS (not in normal flow)</div>
+    <table class="comp-table">
+      <thead><tr><th>Scenario</th><th>What fingerprint is used for</th></tr></thead>
+      <tbody>
+        <tr><td>Normal HTTPS browsing</td><td>Not used — fully automated CA chain verification</td></tr>
+        <tr><td>Click padlock → View Certificate</td><td>Manual human inspection only</td></tr>
+        <tr><td>Certificate pinning (mobile apps)</td><td>App hardcodes expected fingerprint — guards against compromised CAs</td></tr>
+        <tr><td>Self-signed cert (dev/internal)</td><td>Admin distributes fingerprint out-of-band for users to verify before trusting</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="ref-section">
+    <h2><span class="ref-number">7</span> Where Fingerprints Appear — Summary</h2>
+
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th>Context</th>
+          <th>Whose fingerprint?</th>
+          <th>Registered where?</th>
+          <th>Job of the fingerprint</th>
+          <th>Who does the real crypto?</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Android / Firebase</strong></td>
+          <td>Your signing certificate</td>
+          <td>Firebase Console</td>
+          <td>Access control — is this app approved?</td>
+          <td>Android OS (verifies APK signature at install)</td>
+        </tr>
+        <tr>
+          <td><strong>SSH (first connection)</strong></td>
+          <td>Server's host key</td>
+          <td>~/.ssh/known_hosts (full key, not fingerprint)</td>
+          <td>Human trust bootstrap only</td>
+          <td>SSH client (challenge-response every connection)</td>
+        </tr>
+        <tr>
+          <td><strong>TLS (normal)</strong></td>
+          <td>Not used in normal flow</td>
+          <td>—</td>
+          <td>—</td>
+          <td>Browser (CA chain + handshake)</td>
+        </tr>
+        <tr>
+          <td><strong>Git commit IDs</strong></td>
+          <td>Commit contents</td>
+          <td>Everywhere (repos, PRs)</td>
+          <td>Identifier for a snapshot — not security</td>
+          <td>—</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout win" style="margin-top:1.25rem">
+      <div class="callout-title">The pattern that repeats everywhere</div>
+      <strong>Fingerprint = short human-readable identifier.</strong> It is never the cryptographic mechanism itself.<br/>
+      The real proof is always: <em>sign with private key → verify with public key.</em><br/>
+      SHA appears in two roles: as a compression step before signing, and as a convenient short name for a public key / certificate.
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="ref-section">
+    <h2><span class="ref-number">8</span> Glossary</h2>
+    <table class="comp-table">
+      <thead><tr><th>Term</th><th>Definition</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SHA</strong></td><td>Secure Hash Algorithm. Converts any data to a fixed-size digest. One-way, deterministic, avalanche effect.</td></tr>
+        <tr><td><strong>Digest / Hash</strong></td><td>The output of a hash function. Fixed size regardless of input size.</td></tr>
+        <tr><td><strong>Fingerprint</strong></td><td>SHA hash of a certificate. A short, unique identifier for that certificate. Not a security mechanism — a convenience identifier.</td></tr>
+        <tr><td><strong>Private key</strong></td><td>The secret half of a key pair. Used to sign (prove identity) or decrypt. Must never leave your control.</td></tr>
+        <tr><td><strong>Public key</strong></td><td>The shareable half of a key pair. Used to verify signatures or encrypt messages. Safe to publish.</td></tr>
+        <tr><td><strong>Certificate (X.509)</strong></td><td>A file containing a public key + metadata (owner, expiry, issuer) + a signature over that data. Proves the public key belongs to the stated owner.</td></tr>
+        <tr><td><strong>Self-signed certificate</strong></td><td>A certificate signed by its own private key. No CA involved. Used in Android keystores and development environments.</td></tr>
+        <tr><td><strong>CA (Certificate Authority)</strong></td><td>A trusted third party (e.g. Let's Encrypt) that signs certificates after verifying the requester owns the domain. Solves the "who vouches for you?" problem.</td></tr>
+        <tr><td><strong>Keystore</strong></td><td>A password-protected file containing your private key and certificate. Generated by keytool. Must be backed up and kept secret.</td></tr>
+        <tr><td><strong>APK signature</strong></td><td>encrypt(SHA(APK bytes), private key). Stored inside the APK. Lets Android verify the APK was not modified after signing.</td></tr>
+        <tr><td><strong>SSH host key</strong></td><td>A key pair generated when a server OS boots. The server signs challenges with it to prove it is the real server, not an impersonator.</td></tr>
+        <tr><td><strong>known_hosts</strong></td><td>A file on your machine storing SSH servers' public keys. Used to detect if a server's key changes (MITM or rebuild).</td></tr>
+        <tr><td><strong>Forward secrecy</strong></td><td>Property of ECDHE: the session secret is ephemeral and never transmitted. Stealing the private key later cannot decrypt past sessions.</td></tr>
+        <tr><td><strong>TLS handshake</strong></td><td>The setup phase of an HTTPS connection. Uses asymmetric crypto to authenticate the server and derive a shared symmetric key.</td></tr>
+        <tr><td><strong>mTLS</strong></td><td>Mutual TLS. Both client and server present certificates. Used in APIs and service-to-service auth.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="lesson-footer">
+    <p>Lessons: <a href="../lessons/0001-sha-fingerprints-what-and-why.html">Lesson 1 — SHA Fingerprints</a> &nbsp;·&nbsp; <a href="../lessons/0002-public-key-cryptography.html">Lesson 2 — Public-Key Cryptography</a></p>
+    <p style="margin-top:0.5rem">Questions? <code>/teach me [anything unclear]</code> — your agent is your teacher.</p>
+  </div>
+
+</div>
+</body>
+</html>

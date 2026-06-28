@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lesson 3 — Firebase Setup: The Complete Picture</title>
+  <link rel="stylesheet" href="../assets/styles.css" />
+  <style>
+    /* ── Step-list ── */
+    .steps { counter-reset: step; list-style: none; margin: 0 0 1.5rem; padding: 0; }
+    .steps li {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 2rem 1fr;
+      gap: 0 0.85rem;
+      margin-bottom: 0.9rem;
+      font-family: var(--font-sans);
+      font-size: 0.95rem;
+      align-items: start;
+    }
+    .steps li::before {
+      content: counter(step);
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.78rem;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 0.15rem;
+    }
+    .steps li strong { display: block; font-weight: 600; }
+    .steps li span { color: var(--muted); font-size: 0.88rem; }
+
+    /* ── Architecture diagram ── */
+    .arch {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 0.5rem 1rem;
+      align-items: center;
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+      margin: 1.5rem 0;
+    }
+    .arch-box {
+      background: var(--accent-light);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 0.6rem 0.9rem;
+      text-align: center;
+      font-weight: 600;
+    }
+    .arch-box.cloud {
+      background: #fef9c3;
+      border-color: #ca8a04;
+    }
+    .arch-arrow {
+      text-align: center;
+      color: var(--muted);
+      font-size: 1.2rem;
+    }
+
+    /* ── File callout ── */
+    .file-block {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin: 1.25rem 0;
+      overflow: hidden;
+    }
+    .file-block-header {
+      background: var(--code-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 0.4rem 0.9rem;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .file-block pre { border-radius: 0; margin: 0; }
+
+    /* ── Firestore tree ── */
+    .tree {
+      font-family: var(--font-mono);
+      font-size: 0.84rem;
+      line-height: 1.9;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      margin: 1rem 0 1.5rem;
+    }
+    .tree .comment { color: #6b7280; }
+
+    /* ── Two-column table ── */
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0 1.5rem; font-family: var(--font-sans); font-size: 0.9rem; }
+    th { background: var(--code-bg); text-align: left; padding: 0.45rem 0.75rem; border: 1px solid var(--border); font-weight: 600; }
+    td { padding: 0.45rem 0.75rem; border: 1px solid var(--border); vertical-align: top; }
+    tr:nth-child(even) td { background: #fafafa; }
+  </style>
+</head>
+<body>
+<div class="lesson-container">
+
+  <div class="lesson-header">
+    <div class="lesson-number">Lesson 3 · Firebase</div>
+    <h1>Firebase Setup: The Complete Picture</h1>
+    <p class="lesson-subtitle">From console to code — how this project connects to Firebase, and why each piece exists.</p>
+  </div>
+
+  <!-- MENTAL MODEL -->
+  <h2>The one-line mental model</h2>
+
+  <p>Firebase is a <strong>Backend-as-a-Service</strong> (BaaS). Google runs the servers. You write no backend code — you just call their SDK from your app. Two services matter for this project:</p>
+
+  <table>
+    <thead><tr><th>Service</th><th>What it does</th><th>Analogy</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Firebase Auth</strong></td><td>Identity — who is this user?</td><td>The bouncer at the door</td></tr>
+      <tr><td><strong>Firestore</strong></td><td>NoSQL cloud database — store and sync data</td><td>The filing cabinet behind the door</td></tr>
+    </tbody>
+  </table>
+
+  <div class="arch">
+    <div class="arch-box">Flutter App<br><small style="font-weight:400;color:var(--muted)">your phone</small></div>
+    <div class="arch-arrow">⟷</div>
+    <div class="arch-box cloud">Firebase<br><small style="font-weight:400;color:var(--muted)">Google's servers</small></div>
+  </div>
+
+  <p>The SHA-1 fingerprint you registered (covered in <a href="0001-sha-fingerprints-what-and-why.html">Lesson 1</a>) is how Firebase verifies that requests come from <em>your</em> app — the one signed with <em>your</em> key — and not an impersonator.</p>
+
+  <!-- CLOUD SETUP -->
+  <h2>Part 1 — The seven setup steps (cloud side)</h2>
+
+  <p>These are done once per Firebase project in <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a>:</p>
+
+  <ol class="steps">
+    <li>
+      <div><strong>Create a Firebase project</strong>
+      <span>Just a name and a Google project ID. Nothing installed yet.</span></div>
+    </li>
+    <li>
+      <div><strong>Add an Android app → download google-services.json</strong>
+      <span>Enter your package name (e.g. <code>com.example.money_tracker</code>). Firebase generates a config file. Put it in <code>android/app/</code>. It contains your API keys and project IDs — Firebase reads it at build time.</span></div>
+    </li>
+    <li>
+      <div><strong>Enable Auth → Google sign-in provider</strong>
+      <span>In the console: Authentication → Sign-in method → Google → Enable. Without this, Auth calls fail even if your code is correct.</span></div>
+    </li>
+    <li>
+      <div><strong>Create a Firestore database</strong>
+      <span>Firestore → Create database → choose a region. Start in test mode or production mode (you'll lock it down with security rules next).</span></div>
+    </li>
+    <li>
+      <div><strong>Set Firestore security rules</strong>
+      <span>Without rules, anyone who gets your app ID can read every user's data. See Part 4 of this lesson for the rule pattern.</span></div>
+    </li>
+    <li>
+      <div><strong>Add your SHA-1 fingerprint</strong>
+      <span>Project settings → Your apps → Add fingerprint. This is the identity check for Google Sign-In. Debug key: <code>~/.android/debug.keystore</code>. Release key: your release keystore.</span></div>
+    </li>
+    <li>
+      <div><strong>Run <code>flutterfire configure</code></strong>
+      <span>A CLI tool (<code>dart pub global activate flutterfire_cli</code>). This one command does four things automatically: downloads <code>google-services.json</code> → <code>android/app/</code>, edits <code>android/settings.gradle.kts</code> to declare the Gradle plugin, edits <code>android/app/build.gradle.kts</code> to apply it, and generates <code>lib/firebase_options.dart</code>.</span></div>
+    </li>
+  </ol>
+
+  <div class="callout key">
+    <div class="callout-title">Why two config files?</div>
+    <p><strong>google-services.json</strong> is the Android build system's config — Gradle reads it at compile time to embed your Firebase IDs into the APK.<br>
+    <strong>firebase_options.dart</strong> is the Dart/Flutter config — <code>Firebase.initializeApp()</code> reads it at runtime to know which project to connect to.</p>
+    <p>They contain overlapping information but serve different layers (build system vs runtime SDK).</p>
+  </div>
+
+  <!-- FLUTTER SETUP -->
+  <h2>Part 2 — Flutter project setup (your code)</h2>
+
+  <h3>pubspec.yaml — four packages</h3>
+
+  <div class="file-block">
+    <div class="file-block-header">pubspec.yaml</div>
+<pre><code>firebase_core: ^3.0.0      # always required — initialises the SDK
+firebase_auth: ^5.0.0      # login / logout / current user
+cloud_firestore: ^5.0.0    # read and write the database
+google_sign_in: ^6.1.0     # Google picker UI (separate from Firebase Auth)</code></pre>
+  </div>
+
+  <div class="callout note">
+    <div class="callout-title">Why is google_sign_in separate?</div>
+    Firebase Auth handles the Firebase identity layer. But showing the Google account picker is a Google-specific UI that lives in its own package. You need both: <code>google_sign_in</code> to get the Google credential, then <code>firebase_auth</code> to convert it into a Firebase session.
+  </div>
+
+  <h3>Android build files — registering the Gradle plugin</h3>
+
+  <div class="callout win">
+    <div class="callout-title">No manual editing needed</div>
+    <code>flutterfire configure</code> (step 7 above) makes these Gradle edits automatically. The files below show what it writes — useful for understanding or debugging, not for copy-pasting.
+  </div>
+
+  <div class="file-block">
+    <div class="file-block-header">android/settings.gradle.kts — written by flutterfire configure</div>
+<pre><code>// Register the plugin (but don't apply it yet)
+id("com.google.gms.google-services") version "4.4.2" apply false</code></pre>
+  </div>
+
+  <div class="file-block">
+    <div class="file-block-header">android/app/build.gradle.kts — written by flutterfire configure</div>
+<pre><code>// Apply it to the app module — this is what reads google-services.json
+id("com.google.gms.google-services")</code></pre>
+  </div>
+
+  <p>The Google Services Gradle plugin processes <code>google-services.json</code> and injects the values into your Android build as string resources and metadata. Without it, Firebase can't find your project ID at runtime on Android.</p>
+
+  <h3>main.dart — always the first thing</h3>
+
+  <div class="file-block">
+    <div class="file-block-header">lib/main.dart</div>
+<pre><code>void main() async {
+  WidgetsFlutterBinding.ensureInitialized(); // required before any async setup
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform, // from firebase_options.dart
+  );
+  runApp(const MyApp());
+}</code></pre>
+  </div>
+
+  <p><code>Firebase.initializeApp()</code> must complete before any Firebase SDK call — Auth, Firestore, anything. That's why it's <code>await</code>ed before <code>runApp</code>.</p>
+
+  <!-- AUTH FLOW -->
+  <h2>Part 3 — The Auth flow</h2>
+
+  <p>Auth is split across two layers. <code>AuthService</code> is the low-level Firebase wrapper. <code>AppProvider</code> is the state manager that the UI talks to — it never calls <code>AuthService</code> directly.</p>
+
+  <div class="diagram" style="text-align:left;line-height:2.2;">
+    UI (HomeScreen, etc.)<br>
+    &nbsp;&nbsp;↓ context.read&lt;AppProvider&gt;().signInWithGoogle()<br>
+    AppProvider &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em style="color:#6b7280">← holds _currentUser, _syncing, _lastSyncedAt</em><br>
+    &nbsp;&nbsp;↓ AuthService.signInWithGoogle()<br>
+    AuthService &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em style="color:#6b7280">← low-level Firebase calls only</em><br>
+    &nbsp;&nbsp;↓ FirebaseAuth + GoogleSignIn SDK<br>
+    Firebase (cloud)
+  </div>
+
+  <h3>AuthService — the Firebase wrapper</h3>
+
+  <p>All methods are <code>static</code>. It does nothing except talk to Firebase and return results.</p>
+
+  <div class="file-block">
+    <div class="file-block-header">lib/services/auth_service.dart</div>
+<pre><code>// Step 1: Open the Google account picker → get a Google credential
+final googleUser = await _googleSignIn.signIn();
+final googleAuth = await googleUser!.authentication;
+
+// Step 2: Convert to a Firebase credential → log in
+final credential = GoogleAuthProvider.credential(
+  accessToken: googleAuth.accessToken,
+  idToken: googleAuth.idToken,
+);
+final result = await _auth.signInWithCredential(credential);
+return result.user; // returns the Firebase User, or null on failure
+
+// Sign out — must sign out of both Google and Firebase
+await _googleSignIn.signOut();
+await _auth.signOut();</code></pre>
+  </div>
+
+  <h3>AppProvider — the state layer</h3>
+
+  <p>AppProvider holds all the UI-visible auth state and reacts to auth changes via a stream subscription started in its constructor.</p>
+
+  <div class="file-block">
+    <div class="file-block-header">lib/providers/app_provider.dart — constructor</div>
+<pre><code>User? _currentUser;
+bool _syncing = false;
+DateTime? _lastSyncedAt;
+StreamSubscription&lt;User?&gt;? _authSub;
+
+AppProvider() {
+  // Subscribe to Firebase's auth state stream.
+  // Fires immediately on startup (restores saved session) and on every
+  // login/logout thereafter.
+  _authSub = AuthService.authStateChanges.listen((user) {
+    _currentUser = user;
+    if (user != null) _fetchLastSyncedAt(); // load last sync time from Firestore
+    notifyListeners(); // rebuilds any widget watching AppProvider
+  });
+}
+
+@override
+void dispose() {
+  _authSub?.cancel(); // prevent memory leak when provider is removed
+  super.dispose();
+}</code></pre>
+  </div>
+
+  <div class="callout key">
+    <div class="callout-title">Why a stream, not a one-time call?</div>
+    <p><code>authStateChanges()</code> fires automatically on three occasions: (1) when the app starts and Firebase restores a saved session, (2) when the user signs in, (3) when the user signs out. Using a stream means AppProvider is always in sync with Firebase's auth state without any polling.</p>
+  </div>
+
+  <div class="file-block">
+    <div class="file-block-header">lib/providers/app_provider.dart — sign in / sign out</div>
+<pre><code>// Thin wrapper — delegates to AuthService, returns bool for the UI
+Future&lt;bool&gt; signInWithGoogle() async {
+  final user = await AuthService.signInWithGoogle();
+  return user != null;
+  // Note: _currentUser is NOT set here. The authStateChanges stream
+  // fires automatically after sign-in and sets it.
+}
+
+Future&lt;void&gt; signOut() async {
+  await AuthService.signOut();
+  _lastSyncedAt = null; // clear sync timestamp from UI
+  notifyListeners();
+  // Again, _currentUser is cleared by the authStateChanges stream.
+}</code></pre>
+  </div>
+
+  <div class="diagram">
+    User taps "Sign in with Google"<br>
+    ↓<br>
+    AppProvider.signInWithGoogle() → AuthService.signInWithGoogle()<br>
+    ↓<br>
+    GoogleSignIn().signIn() → Google picks account → returns <strong>idToken + accessToken</strong><br>
+    ↓<br>
+    GoogleAuthProvider.credential(idToken, accessToken) → <strong>Firebase credential</strong><br>
+    ↓<br>
+    signInWithCredential(credential) → Firebase checks your app's SHA-1 → <strong>Firebase session saved</strong><br>
+    ↓<br>
+    authStateChanges stream fires → AppProvider._currentUser = user → notifyListeners()<br>
+    ↓<br>
+    UI rebuilds — shows logged-in state
+  </div>
+
+  <!-- FIRESTORE -->
+  <h2>Part 4 — Firestore: data model and patterns</h2>
+
+  <p>Firestore is not SQL. It's a hierarchy: <strong>collections → documents → fields</strong>.</p>
+
+  <div class="tree">
+    <span class="comment">// This is the structure used in this project</span><br>
+    users/                     <span class="comment">← collection</span><br>
+    &nbsp;&nbsp;{uid}/                 <span class="comment">← document (one per logged-in user)</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;name: "Nishant"     <span class="comment">← fields</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;email: "..."<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;months/            <span class="comment">← subcollection</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2025-06/         <span class="comment">← document per month</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;transactions: [] <span class="comment">← array field</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2025-05/<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;transactions: []
+  </div>
+
+  <div class="file-block">
+    <div class="file-block-header">lib/services/sync_service.dart — write</div>
+<pre><code>final db = FirebaseFirestore.instance;
+
+// Overwrite the whole document
+await db.collection('users').doc(uid).set({'name': 'Nishant'});
+
+// Merge — only update listed fields, leave others alone
+await db.collection('users').doc(uid).set(
+  {'lastSeen': Timestamp.now()},
+  SetOptions(merge: true),
+);</code></pre>
+  </div>
+
+  <div class="file-block">
+    <div class="file-block-header">lib/services/sync_service.dart — read</div>
+<pre><code>// Read once
+final doc = await db.collection('users').doc(uid).get();
+final data = doc.data(); // Map&lt;String, dynamic&gt;? — null if doc doesn't exist
+
+// Read a subcollection (all months)
+final snap = await db
+    .collection('users').doc(uid)
+    .collection('months').get();
+for (final doc in snap.docs) {
+  print(doc.id);     // e.g. "2025-06"
+  print(doc.data()); // the fields
+}
+
+// Real-time listener (fires every time data changes on the server)
+db.collection('users').doc(uid).snapshots().listen((snap) {
+  print(snap.data());
+});</code></pre>
+  </div>
+
+  <h3>Security rules — the gatekeeper</h3>
+
+  <div class="file-block">
+    <div class="file-block-header">Firestore console → Rules</div>
+<pre><code>rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == uid;
+    }
+  }
+}</code></pre>
+  </div>
+
+  <p>Two checks: <strong>(1)</strong> the request must be authenticated (logged in), and <strong>(2)</strong> the Firebase UID of the logged-in user must match the <code>{uid}</code> in the document path. This means each user can only read and write their own subtree. Without this, anyone with your app's credentials could read anyone's data.</p>
+
+  <!-- PROJECT FILES MAP -->
+  <h2>Part 5 — Where it lives in this project</h2>
+
+  <table>
+    <thead><tr><th>File</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>android/app/google-services.json</code></td><td>Android build config. Downloaded from Firebase console. Not in git (contains API keys).</td></tr>
+      <tr><td><code>lib/firebase_options.dart</code></td><td>Generated by <code>flutterfire configure</code>. Runtime config for the Flutter SDK.</td></tr>
+      <tr><td><code>android/settings.gradle.kts</code></td><td>Declares the Google Services Gradle plugin.</td></tr>
+      <tr><td><code>android/app/build.gradle.kts</code></td><td>Applies the plugin so it processes <code>google-services.json</code>.</td></tr>
+      <tr><td><code>lib/main.dart</code></td><td><code>Firebase.initializeApp()</code> — must run first.</td></tr>
+      <tr><td><code>lib/services/auth_service.dart</code></td><td>Google Sign-In → Firebase credential → login/logout.</td></tr>
+      <tr><td><code>lib/services/sync_service.dart</code></td><td>Reads/writes transaction data to Firestore.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- QUIZ -->
+  <h2>Check your understanding</h2>
+
+  <div class="quiz" id="q1">
+    <p class="quiz-question">1. Why does Firebase require your SHA-1 fingerprint to enable Google Sign-In?</p>
+    <ul class="quiz-options">
+      <li><label><input type="radio" name="q1" value="a"> It encrypts the data stored in Firestore using your key</label></li>
+      <li><label><input type="radio" name="q1" value="b"> It verifies the request comes from an APK signed by your key, not an impersonator</label></li>
+      <li><label><input type="radio" name="q1" value="c"> It authenticates the user's Google account to Firebase</label></li>
+      <li><label><input type="radio" name="q1" value="d"> It generates the OAuth tokens used during sign-in</label></li>
+    </ul>
+    <button class="quiz-btn" onclick="check('q1','b')">Check answer</button>
+    <div class="quiz-feedback" id="q1-feedback"></div>
+  </div>
+
+  <div class="quiz" id="q2">
+    <p class="quiz-question">2. What is the difference between google-services.json and firebase_options.dart?</p>
+    <ul class="quiz-options">
+      <li><label><input type="radio" name="q2" value="a"> They're identical — one is the Dart version of the other</label></li>
+      <li><label><input type="radio" name="q2" value="b"> google-services.json is for release builds; firebase_options.dart is for debug builds</label></li>
+      <li><label><input type="radio" name="q2" value="c"> google-services.json is read by Gradle at build time; firebase_options.dart is read by the Flutter SDK at runtime</label></li>
+      <li><label><input type="radio" name="q2" value="d"> firebase_options.dart replaces google-services.json — you only need one of them</label></li>
+    </ul>
+    <button class="quiz-btn" onclick="check('q2','c')">Check answer</button>
+    <div class="quiz-feedback" id="q2-feedback"></div>
+  </div>
+
+  <div class="quiz" id="q3">
+    <p class="quiz-question">3. In Firestore, what does SetOptions(merge: true) do that plain .set() does not?</p>
+    <ul class="quiz-options">
+      <li><label><input type="radio" name="q3" value="a"> Creates the document if it doesn't exist; plain .set() requires the doc to already exist</label></li>
+      <li><label><input type="radio" name="q3" value="b"> Only updates the specified fields, leaving other fields intact; plain .set() overwrites everything</label></li>
+      <li><label><input type="radio" name="q3" value="c"> Applies the write as a real-time listener update; plain .set() is a one-shot write</label></li>
+      <li><label><input type="radio" name="q3" value="d"> Writes to a subcollection; plain .set() writes to the parent document only</label></li>
+    </ul>
+    <button class="quiz-btn" onclick="check('q3','b')">Check answer</button>
+    <div class="quiz-feedback" id="q3-feedback"></div>
+  </div>
+
+  <div class="quiz" id="q4">
+    <p class="quiz-question">4. What happens if you don't set Firestore security rules (or leave them in test mode)?</p>
+    <ul class="quiz-options">
+      <li><label><input type="radio" name="q4" value="a"> All writes fail — Firestore blocks unauthenticated writes by default</label></li>
+      <li><label><input type="radio" name="q4" value="b"> Firebase encrypts all data automatically so only your app can read it</label></li>
+      <li><label><input type="radio" name="q4" value="c"> Anyone with your app ID can read and write every user's data</label></li>
+      <li><label><input type="radio" name="q4" value="d"> Only users who have previously signed in can access any data</label></li>
+    </ul>
+    <button class="quiz-btn" onclick="check('q4','c')">Check answer</button>
+    <div class="quiz-feedback" id="q4-feedback"></div>
+  </div>
+
+  <div class="quiz" id="q5">
+    <p class="quiz-question">5. In the Google Sign-In flow, what does google_sign_in provide that firebase_auth alone cannot?</p>
+    <ul class="quiz-options">
+      <li><label><input type="radio" name="q5" value="a"> The Firebase session token used to authenticate Firestore calls</label></li>
+      <li><label><input type="radio" name="q5" value="b"> The Google account picker UI and the resulting idToken + accessToken</label></li>
+      <li><label><input type="radio" name="q5" value="c"> The user's unique Firebase UID stored in Firestore</label></li>
+      <li><label><input type="radio" name="q5" value="d"> The SHA-1 fingerprint check that Firebase performs on the APK</label></li>
+    </ul>
+    <button class="quiz-btn" onclick="check('q5','b')">Check answer</button>
+    <div class="quiz-feedback" id="q5-feedback"></div>
+  </div>
+
+  <!-- PRIMARY SOURCE -->
+  <div class="callout win" style="margin-top:2.5rem;">
+    <div class="callout-title">Primary source for this lesson</div>
+    <p><a href="https://firebase.google.com/docs/android/setup" target="_blank">Firebase Android Setup — Official Docs</a> — the authoritative guide for steps 1–6 above. Covers adding the config file, Gradle plugin, and SHA fingerprints. Bookmark this for when you set up Firebase in a new project.</p>
+  </div>
+
+  <div class="callout note">
+    <div class="callout-title">Ask your teacher</div>
+    Anything unclear in this lesson? Ask follow-up questions to your Claude Code agent — it can go deeper on any part: Firestore queries, security rule logic, how flutterfire configure works internally, or why google-services.json should not be committed to a public repo.
+  </div>
+
+  <div class="lesson-footer">
+    <p>
+      Previous: <a href="0002-public-key-cryptography.html">Lesson 2 — Public-Key Cryptography</a> ·
+      Reference: <a href="../reference/firebase-setup-reference.html">Firebase Setup Cheat Sheet</a>
+    </p>
+    <p style="margin-top:0.5rem;">Mission: <a href="../MISSION.md">SHA Fingerprints &amp; Firebase Setup</a></p>
+  </div>
+
+</div>
+
+<script>
+const explanations = {
+  q1: {
+    b: "Correct. Firebase uses the SHA-1 to verify the APK's signing certificate matches the one you registered. This is the app identity check you covered in Lesson 1 — without it, any app could impersonate yours and trigger Google Sign-In.",
+    wrong: "Not quite. The SHA-1 is an identity check for the APK's signing certificate. Firebase checks: 'Is this request from an APK signed by the developer who registered this Firebase project?' See Lesson 1 for the full picture."
+  },
+  q2: {
+    c: "Correct. Two different layers: Gradle (build time) reads google-services.json to embed Firebase IDs into the Android APK. The Flutter SDK (runtime) reads firebase_options.dart when Firebase.initializeApp() is called. Both are needed.",
+    wrong: "Not quite. They serve different layers. google-services.json is a build-time config that the Google Services Gradle plugin processes. firebase_options.dart is a runtime config that the Flutter Firebase SDK reads via Firebase.initializeApp()."
+  },
+  q3: {
+    b: "Correct. Plain .set() overwrites the entire document — any fields you don't include are deleted. SetOptions(merge: true) behaves like a partial update: only the fields you specify are changed, others survive untouched.",
+    wrong: "Not quite. The key difference is field preservation. Plain .set() replaces the whole document. SetOptions(merge: true) acts like an update — only named fields change, the rest stay as they are."
+  },
+  q4: {
+    c: "Correct. In test mode (or with open rules like 'allow read, write: if true'), there is no access control. Anyone who can call the Firestore API with your project ID — which is not secret — can read or write any document.",
+    wrong: "Not quite. Firestore does not encrypt data at the access-control level — it relies entirely on security rules. Without proper rules, all data is exposed to anyone who makes a Firestore call with your project credentials."
+  },
+  q5: {
+    b: "Correct. firebase_auth can log in via many providers but it doesn't know how to open the Google account picker. google_sign_in handles the Google-specific UI flow and returns an idToken and accessToken. You then hand those to firebase_auth to create a Firebase session.",
+    wrong: "Not quite. firebase_auth handles the Firebase session layer. But it needs a credential to work from. google_sign_in provides the Google-specific UI flow (the account picker) and returns the idToken + accessToken that firebase_auth converts into a Firebase session."
+  }
+};
+
+function check(qid, correct) {
+  const selected = document.querySelector(`input[name="${qid}"]:checked`);
+  const feedback = document.getElementById(`${qid}-feedback`);
+  if (!selected) return;
+  const val = selected.value;
+  const expl = explanations[qid];
+  if (val === correct) {
+    feedback.className = 'quiz-feedback correct';
+    feedback.textContent = expl[correct];
+  } else {
+    feedback.className = 'quiz-feedback incorrect';
+    feedback.textContent = expl.wrong;
+  }
+  feedback.style.display = 'block';
+}
+</script>
+</body>
+</html>

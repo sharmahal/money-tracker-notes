@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Firebase Setup — Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/styles.css" />
+  <style>
+    .ref-section { margin-bottom: 2rem; }
+    .checklist { list-style: none; padding: 0; margin: 0.5rem 0 1rem; }
+    .checklist li { padding: 0.3rem 0 0.3rem 1.8rem; position: relative; font-family: var(--font-sans); font-size: 0.9rem; }
+    .checklist li::before { content: "☐"; position: absolute; left: 0; color: var(--accent); font-size: 1rem; }
+    .tag {
+      display: inline-block;
+      background: var(--accent-light);
+      color: var(--accent);
+      font-family: var(--font-sans);
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.1em 0.5em;
+      border-radius: 4px;
+      margin-right: 0.4rem;
+    }
+    .tag.cloud { background: #fef9c3; color: #92400e; }
+    .tag.code  { background: var(--success-light); color: var(--success); }
+  </style>
+</head>
+<body>
+<div class="lesson-container">
+
+  <div class="lesson-header">
+    <div class="lesson-number">Reference · Firebase</div>
+    <h1>Firebase Setup Cheat Sheet</h1>
+    <p class="lesson-subtitle">One-page reference for new project setup. Print and tick.</p>
+  </div>
+
+  <!-- ONE-TIME SETUP -->
+  <div class="ref-section">
+    <h2>One-time project setup <span class="tag cloud">Cloud</span></h2>
+    <ul class="checklist">
+      <li><span class="tag cloud">Console</span> Create project at console.firebase.google.com</li>
+      <li><span class="tag cloud">Console</span> Add Android app → enter package name → download <code>google-services.json</code> → place in <code>android/app/</code></li>
+      <li><span class="tag cloud">Console</span> Authentication → Sign-in method → Google → Enable</li>
+      <li><span class="tag cloud">Console</span> Firestore → Create database → choose region</li>
+      <li><span class="tag cloud">Console</span> Firestore → Rules → paste security rules (see below)</li>
+      <li><span class="tag cloud">Console</span> Project settings → Your apps → Add SHA-1 fingerprint</li>
+      <li><span class="tag code">CLI</span> <code>flutterfire configure</code> → generates <code>lib/firebase_options.dart</code></li>
+    </ul>
+
+    <p><strong>Get SHA-1 (debug key):</strong></p>
+<pre><code>keytool -list -v \
+  -keystore ~/.android/debug.keystore \
+  -alias androiddebugkey \
+  -storepass android -keypass android</code></pre>
+  </div>
+
+  <!-- FLUTTER SETUP -->
+  <div class="ref-section">
+    <h2>Flutter project setup <span class="tag code">Code</span></h2>
+
+    <p><strong>pubspec.yaml</strong></p>
+<pre><code>dependencies:
+  firebase_core: ^3.0.0
+  firebase_auth: ^5.0.0
+  cloud_firestore: ^5.0.0
+  google_sign_in: ^6.1.0</code></pre>
+
+    <p><strong>android/settings.gradle.kts</strong> — declare plugin:</p>
+<pre><code>id("com.google.gms.google-services") version "4.4.2" apply false</code></pre>
+
+    <p><strong>android/app/build.gradle.kts</strong> — apply plugin:</p>
+<pre><code>id("com.google.gms.google-services")</code></pre>
+
+    <p><strong>lib/main.dart</strong> — always first:</p>
+<pre><code>WidgetsFlutterBinding.ensureInitialized();
+await Firebase.initializeApp(
+  options: DefaultFirebaseOptions.currentPlatform,
+);</code></pre>
+  </div>
+
+  <!-- AUTH PATTERN -->
+  <div class="ref-section">
+    <h2>Auth pattern <span class="tag code">Code</span></h2>
+
+<pre><code>// Sign in (Google)
+final googleUser = await GoogleSignIn().signIn();
+final googleAuth = await googleUser!.authentication;
+final credential = GoogleAuthProvider.credential(
+  accessToken: googleAuth.accessToken,
+  idToken: googleAuth.idToken,
+);
+await FirebaseAuth.instance.signInWithCredential(credential);
+
+// Current user
+final user = FirebaseAuth.instance.currentUser; // null if not logged in
+
+// Listen to auth changes
+FirebaseAuth.instance.authStateChanges().listen((user) { ... });
+
+// Sign out
+await FirebaseAuth.instance.signOut();</code></pre>
+  </div>
+
+  <!-- FIRESTORE PATTERN -->
+  <div class="ref-section">
+    <h2>Firestore patterns <span class="tag code">Code</span></h2>
+
+<pre><code>final db = FirebaseFirestore.instance;
+
+// Write (overwrites entire document)
+await db.collection('users').doc(uid).set({...});
+
+// Merge (partial update — other fields survive)
+await db.collection('users').doc(uid).set(
+  {'lastSeen': Timestamp.now()},
+  SetOptions(merge: true),
+);
+
+// Read once
+final doc = await db.collection('users').doc(uid).get();
+final data = doc.data(); // Map&lt;String, dynamic&gt;? — null if missing
+
+// Read subcollection
+final snap = await db
+    .collection('users').doc(uid)
+    .collection('months').get();
+for (final d in snap.docs) { print(d.id, d.data()); }
+
+// Real-time listener
+db.collection('users').doc(uid).snapshots().listen((snap) {
+  print(snap.data()); // fires on every server change
+});</code></pre>
+  </div>
+
+  <!-- SECURITY RULES -->
+  <div class="ref-section">
+    <h2>Security rules <span class="tag cloud">Console</span></h2>
+
+<pre><code>rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Each user can only access their own subtree
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == uid;
+    }
+  }
+}</code></pre>
+  </div>
+
+  <!-- DATA MODEL -->
+  <div class="ref-section">
+    <h2>Firestore data model</h2>
+    <div class="diagram" style="text-align:left;line-height:2;">
+users/               ← collection<br>
+&nbsp;&nbsp;{uid}/           ← document<br>
+&nbsp;&nbsp;&nbsp;&nbsp;name: "…"      ← fields<br>
+&nbsp;&nbsp;&nbsp;&nbsp;email: "…"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;months/        ← subcollection<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2025-06/     ← document<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;transactions: […]
+    </div>
+  </div>
+
+  <!-- KEY CONCEPTS -->
+  <div class="ref-section">
+    <h2>Key concepts</h2>
+    <table>
+      <thead><tr><th>Term</th><th>What it is</th></tr></thead>
+      <tbody>
+        <tr><td>google-services.json</td><td>Build-time Android config. Downloaded from Firebase console. Gradle reads it.</td></tr>
+        <tr><td>firebase_options.dart</td><td>Runtime Flutter config. Generated by <code>flutterfire configure</code>. SDK reads it.</td></tr>
+        <tr><td>SHA-1 fingerprint</td><td>Hash of your APK's signing certificate. Firebase uses it to verify your app's identity for Google Sign-In.</td></tr>
+        <tr><td>Google Services plugin</td><td>Gradle plugin that processes google-services.json and injects Firebase IDs into the APK.</td></tr>
+        <tr><td>user.uid</td><td>Firebase's unique ID for the logged-in user. Stable across sessions. Use as Firestore document ID.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="lesson-footer">
+    <p>See also: <a href="../lessons/0003-firebase-setup-complete-picture.html">Lesson 3 — Firebase Setup</a> · <a href="cryptography-reference.html">Cryptography Reference</a></p>
+    <p>Primary source: <a href="https://firebase.google.com/docs/android/setup" target="_blank">Firebase Android Setup Docs</a></p>
+  </div>
+
+</div>
+</body>
+</html>

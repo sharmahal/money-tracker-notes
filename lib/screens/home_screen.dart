@@ -91,6 +91,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  void _showSyncSheet(AppProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => ChangeNotifierProvider.value(
+        value: provider,
+        child: const _SyncSheet(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
@@ -186,6 +200,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             tooltip: 'Add transaction',
             icon: const Icon(Icons.add_circle_outline),
             onPressed: _openAddTransaction,
+          ),
+          IconButton(
+            tooltip: provider.currentUser == null ? 'Sign in to sync' : 'Sync',
+            icon: provider.currentUser != null
+                ? CircleAvatar(
+                    radius: 12,
+                    backgroundImage: provider.currentUser!.photoURL != null
+                        ? NetworkImage(provider.currentUser!.photoURL!)
+                        : null,
+                    backgroundColor: Colors.white24,
+                    child: provider.currentUser!.photoURL == null
+                        ? const Icon(Icons.person, size: 14, color: Colors.white)
+                        : null,
+                  )
+                : const Icon(Icons.cloud_outlined),
+            onPressed: () => _showSyncSheet(provider),
           ),
           const SizedBox(width: 4),
         ],
@@ -772,5 +802,160 @@ class _TransactionsTab extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+// ─── Sync bottom sheet ────────────────────────────────────────────────────────
+
+class _SyncSheet extends StatefulWidget {
+  const _SyncSheet();
+
+  @override
+  State<_SyncSheet> createState() => _SyncSheetState();
+}
+
+class _SyncSheetState extends State<_SyncSheet> {
+  String? _statusMessage;
+
+  Future<void> _run(Future<String> Function() action) async {
+    final msg = await action();
+    if (mounted) setState(() => _statusMessage = msg);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<AppProvider>();
+    final user = provider.currentUser;
+    final syncing = provider.syncing;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          if (user == null) ...[
+            const Icon(Icons.cloud_sync_outlined, size: 48, color: Color(0xFF4F46E5)),
+            const SizedBox(height: 12),
+            const Text(
+              'Sync across devices',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Sign in with Google to back up your transactions and restore them on a new phone.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              icon: const Icon(Icons.login),
+              label: const Text('Sign in with Google'),
+              onPressed: () async {
+                final ok = await provider.signInWithGoogle();
+                if (!ok && mounted) {
+                  setState(() => _statusMessage = 'Sign-in cancelled or failed.');
+                }
+              },
+            ),
+          ] else ...[
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundImage: user.photoURL != null
+                      ? NetworkImage(user.photoURL!)
+                      : null,
+                  backgroundColor: const Color(0xFF4F46E5),
+                  child: user.photoURL == null
+                      ? const Icon(Icons.person, color: Colors.white)
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(user.displayName ?? 'Signed in',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 15)),
+                      Text(user.email ?? '',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            if (provider.lastSyncedAt != null)
+              Text(
+                'Last synced: ${_formatTs(provider.lastSyncedAt!)}',
+                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              icon: syncing
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.cloud_upload_outlined),
+              label: const Text('Push to cloud'),
+              onPressed: syncing ? null : () => _run(provider.pushToCloud),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              icon: syncing
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.cloud_download_outlined),
+              label: const Text('Pull from cloud'),
+              onPressed: syncing ? null : () => _run(provider.pullFromCloud),
+            ),
+            if (_statusMessage != null) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4F46E5).withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(_statusMessage!,
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF4F46E5))),
+              ),
+            ],
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () async {
+                final nav = Navigator.of(context);
+                await provider.signOut();
+                if (mounted) nav.pop();
+              },
+              child: Text('Sign out', style: TextStyle(color: Colors.grey[500])),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatTs(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+    if (diff.inDays < 1) return '${diff.inHours}h ago';
+    return '${dt.day}/${dt.month}/${dt.year}';
   }
 }

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lesson 2 — Public-Key Cryptography: The Root of Everything</title>
+  <link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+<div class="lesson-container">
+
+  <div class="lesson-header">
+    <div class="lesson-number">Lesson 2 of ∞ &nbsp;·&nbsp; <a href="0001-sha-fingerprints-what-and-why.html">← Lesson 1</a></div>
+    <h1>Public-Key Cryptography: The Root of Everything</h1>
+    <p class="lesson-subtitle">Answers your 4 questions about keytool, SSH, MITM, and certificates — all from one idea.</p>
+  </div>
+
+  <div class="callout note">
+    <div class="callout-title">Your 4 questions</div>
+    <ol style="margin:0 0 0 1.2rem">
+      <li>Is a fingerprint needed to SSH into a GCP machine?</li>
+      <li>Where does our certificate come from?</li>
+      <li>What if a man-in-the-middle steals my certificate and presents it?</li>
+      <li>What is the keytool command doing — is it generating a public and private key?</li>
+    </ol>
+    All four have the same underlying answer: <strong>public-key cryptography</strong>.
+  </div>
+
+  <!-- ────────────────────────────────────── -->
+  <h2>The padlock analogy</h2>
+
+  <p>
+    Imagine a special padlock that anyone can <em>close</em>, but only <em>you</em> can open.
+    You hand out copies of this open padlock to everyone. Anyone can put a message in a box,
+    snap your padlock shut, and send it to you. Only you — holding the one true key — can open it.
+  </p>
+
+  <div class="diagram">
+    🔓 <strong>Public key</strong> — the open padlock. Share it with the world. Safe to publish.
+    <br/>
+    🔑 <strong>Private key</strong> — the key that opens it. Keep it secret. Never share it.
+    <br/><br/>
+    Together they are a <strong>key pair</strong>. Mathematically linked. Generated together.
+    <br/>
+    You can derive nothing useful about one from the other.
+  </div>
+
+  <p>
+    This is <a href="https://en.wikipedia.org/wiki/Public-key_cryptography" target="_blank">
+    public-key cryptography</a> (also called asymmetric cryptography). The two operations it enables are:
+  </p>
+  <ul>
+    <li><strong>Encryption</strong>: anyone encrypts with your public key → only you can decrypt (private key).</li>
+    <li><strong>Signing</strong>: you sign with your private key → anyone can verify with your public key.</li>
+  </ul>
+  <p>
+    Android APK signing and SSH both use the <strong>signing</strong> direction.
+  </p>
+
+  <!-- ────────────────────────────────────── -->
+  <h2>Question 4: What is keytool doing?</h2>
+  <p>Yes — <code>keytool -genkeypair</code> generates a key pair. Here is exactly what happens:</p>
+
+  <pre><code>keytool -genkeypair \
+  -alias androiddebugkey \
+  -keyalg RSA \
+  -keysize 2048 \
+  -keystore debug.keystore</code></pre>
+
+  <div class="diagram" style="text-align:left; line-height:1.9">
+    Step 1  Generate a <strong>private key</strong>  (RSA 2048-bit, stored encrypted in the keystore file)
+    <br/>
+    Step 2  Derive the matching <strong>public key</strong>  (mathematically linked to the private key)
+    <br/>
+    Step 3  Wrap the public key into an <strong>X.509 certificate</strong>
+            (a standard envelope that adds: owner name, expiry date, issuer, algorithm info)
+    <br/>
+    Step 4  <strong>Self-sign</strong> that certificate using the private key
+            (proves it hasn't been tampered with)
+    <br/>
+    Step 5  Store everything in the <strong>keystore file</strong>  (.jks / .keystore)
+  </div>
+
+  <p>
+    The keystore is just a password-protected file that holds your private key and its certificate.
+    The fingerprint from Lesson 1 is the SHA hash of that certificate (Step 3/4 above).
+  </p>
+
+  <div class="callout key">
+    <div class="callout-title">Key insight</div>
+    <strong>The certificate is public.</strong> You can hand it to anyone — that's literally what
+    you do when you paste the fingerprint into Firebase. The private key is what must never leave
+    your machine.
+  </div>
+
+  <!-- ────────────────────────────────────── -->
+  <h2>Question 2: Where does the certificate come from?</h2>
+  <p>
+    For Android apps, you create it yourself with keytool (as above). It is <em>self-signed</em> —
+    meaning you are both the issuer and the subject. There is no third party involved.
+  </p>
+  <p>
+    This is different from HTTPS website certificates, where a <strong>Certificate Authority (CA)</strong>
+    like Let's Encrypt or DigiCert signs your certificate — vouching that you own the domain.
+    Android doesn't need a CA because Firebase doesn't care <em>who</em> you are in the real world;
+    it only cares that the APK was signed by the same key you registered. Identity here is
+    "matches the registered fingerprint," not "verified by a trusted third party."
+  </p>
+
+  <div class="diagram" style="text-align:left; line-height: 1.9">
+    HTTPS certificate:  your key → signed by → Let's Encrypt (CA) → trusted by browsers
+    <br/>
+    Android keystore:   your key → self-signed → registered in Firebase console → trusted by Firebase
+    <br/><br/>
+    <small>Both use the same public-key infrastructure — different trust anchors.</small>
+  </div>
+
+  <!-- ────────────────────────────────────── -->
+  <h2>Question 3: What if a MITM steals my certificate?</h2>
+
+  <p>
+    <strong>They get nothing useful.</strong> The certificate contains only the public key.
+    It is already public — Firebase shows it in the console, your APK ships it to every user's phone.
+    There is no secret in the certificate.
+  </p>
+  <p>
+    The real threat is someone stealing your <strong>private key</strong>. With it, they could:
+  </p>
+  <ul>
+    <li>Sign a malicious APK that appears to come from you</li>
+    <li>Firebase would accept it (same fingerprint → same key → trusted)</li>
+    <li>Google Play would accept it as an update to your app</li>
+  </ul>
+
+  <div class="diagram" style="text-align:left; line-height:1.9">
+    Attacker gets your <span style="color:#1a56db">certificate (public key)</span>
+    → can verify your signatures, but cannot create new ones → <span style="color:#065f46">harmless</span>
+    <br/><br/>
+    Attacker gets your <span style="color:#e02020">private key</span>
+    → can sign anything and impersonate you completely → <span style="color:#e02020">catastrophic</span>
+  </div>
+
+  <div class="callout note">
+    <div class="callout-title">Why losing a private key is an emergency</div>
+    If your Android release keystore is stolen, you must: revoke it with Google Play
+    (if using Play App Signing), remove the fingerprint from Firebase, generate a new key,
+    re-release the app. Users on the old version can no longer receive updates from you.
+    This is why the keystore file should be in a password manager or secret vault — never in git.
+  </div>
+
+  <!-- ────────────────────────────────────── -->
+  <h2>Question 1: SSH into a GCP VM — is a fingerprint involved?</h2>
+
+  <p>
+    Yes, but <em>which direction</em> is reversed. SSH uses the exact same public-key cryptography,
+    applied twice — once for you proving yourself to the server, once for the server proving itself to you.
+  </p>
+
+  <h3>You → Server (authentication)</h3>
+  <p>
+    You generate an SSH key pair with <code>ssh-keygen</code>. Your public key goes into the VM
+    (via GCP Console, metadata, or OS Login). When you connect, your SSH client signs a challenge
+    with your private key — the server verifies with your public key. No password needed.
+  </p>
+
+  <h3>Server → You (host verification)</h3>
+  <p>
+    The VM also has its own key pair (the <em>host key</em>), generated when the OS boots.
+    The first time you connect, SSH shows you the SHA-256 fingerprint of the server's host key:
+  </p>
+  <pre><code>The authenticity of host '34.x.x.x' can't be established.
+ED25519 key fingerprint is SHA256:AbCdEf1234...
+Are you sure you want to continue connecting? (yes/no)?</code></pre>
+  <p>
+    You type <code>yes</code> → SSH saves it in <code>~/.ssh/known_hosts</code>.
+    Next connection: SSH checks the fingerprint silently. If it changed (VM rebuilt, or MITM
+    attack), SSH refuses and shows a loud warning.
+  </p>
+
+  <div class="diagram" style="text-align:left; line-height:1.9">
+    Android signing        →  <em>you</em> prove APK identity <em>to Firebase</em>
+                              (your app's cert fingerprint, registered in advance)
+    <br/>
+    SSH host verification  →  <em>server</em> proves identity <em>to you</em>
+                              (server's host key fingerprint, stored in known_hosts)
+    <br/>
+    SSH auth               →  <em>you</em> prove identity <em>to server</em>
+                              (your SSH public key, stored on the VM)
+  </div>
+
+  <p>
+    GCP's <code>gcloud compute ssh</code> handles host key verification automatically and can
+    show you a VM's host fingerprints via the Console (VM details → SSH Keys tab).
+    You don't register a fingerprint to SSH into GCP — you add your SSH public key to the VM.
+  </p>
+
+  <!-- ────────────────────────────────────── -->
+  <h2>The unified picture</h2>
+  <div class="diagram" style="text-align:left; line-height:2">
+    Every scenario you have asked about uses the same 3-step pattern:
+    <br/><br/>
+    1. Generate a key pair  (private key + public key)
+    <br/>
+    2. Share the public key with the party that needs to verify you
+       (Firebase console / VM authorized_keys / HTTPS CA)
+    <br/>
+    3. Sign something with the private key at runtime
+       (APK bytes / SSH handshake challenge / TLS handshake)
+    <br/><br/>
+    The fingerprint is always the SHA hash of the public key (or its certificate) —
+    a short, shareable identifier for "which key pair are we talking about."
+  </div>
+
+  <!-- ────────────────────────────────────── -->
+  <h2>Check your understanding</h2>
+
+  <div class="quiz" id="q1">
+    <p class="quiz-question">1. An attacker intercepts and copies your Android keystore certificate. What can they do with it?</p>
+    <ul class="quiz-options">
+      <li><label><input type="radio" name="q1" value="a"> Sign a fake APK and publish it as your app</label></li>
+      <li><label><input type="radio" name="q1" value="b"> Verify your existing APK signatures, nothing more</label></li>
+      <li><label><input type="radio" name="q1" value="c"> Decrypt Firebase traffic from your users</label></li>
+      <li><label><input type="radio" name="q1" value="d"> Regenerate your private key from the certificate</label></li>
+    </ul>
+    <button class="quiz-btn" onclick="checkQ('q1','b','The certificate contains only the public key. The public key can verify signatures but cannot create them. Signing requires the private key, which is never in the certificate.')">Check</button>
+    <div class="quiz-feedback" id="q1-feedback"></div>
+  </div>
+
+  <div class="quiz" id="q2">
+    <p class="quiz-question">2. When <code>keytool -genkeypair</code> runs, what ends up stored in the keystore file?</p>
+    <ul class="quiz-options">
+      <li><label><input type="radio" name="q2" value="a"> The private key and a certificate wrapping the public key</label></li>
+      <li><label><input type="radio" name="q2" value="b"> Only the public key and the SHA fingerprint of the app</label></li>
+      <li><label><input type="radio" name="q2" value="c"> The SHA fingerprint encrypted with a CA-issued certificate</label></li>
+      <li><label><input type="radio" name="q2" value="d"> Two private keys in case one is lost or rotated</label></li>
+    </ul>
+    <button class="quiz-btn" onclick="checkQ('q2','a','keytool generates the key pair, wraps the public key in a self-signed X.509 certificate, then stores both the private key and the certificate in the keystore file.')">Check</button>
+    <div class="quiz-feedback" id="q2-feedback"></div>
+  </div>
+
+  <div class="quiz" id="q3">
+    <p class="quiz-question">3. SSH into a GCP VM shows "fingerprint SHA256:AbCd…". This fingerprint belongs to…</p>
+    <ul class="quiz-options">
+      <li><label><input type="radio" name="q3" value="a"> Your own SSH public key stored on the virtual machine</label></li>
+      <li><label><input type="radio" name="q3" value="b"> The VM's host key, so you can verify you reached the right server</label></li>
+      <li><label><input type="radio" name="q3" value="c"> GCP's root certificate authority that signed the instance</label></li>
+      <li><label><input type="radio" name="q3" value="d"> The SHA hash of the VM's IP address and project ID</label></li>
+    </ul>
+    <button class="quiz-btn" onclick="checkQ('q3','b','The SSH server (the VM) has its own host key pair. The fingerprint is the SHA-256 hash of the server\\'s public host key. You store it in ~/.ssh/known_hosts so future connections can verify the server hasn\\'t been swapped out.')">Check</button>
+    <div class="quiz-feedback" id="q3-feedback"></div>
+  </div>
+
+  <div class="quiz" id="q4">
+    <p class="quiz-question">4. Why does an Android certificate not need to be signed by a Certificate Authority (CA)?</p>
+    <ul class="quiz-options">
+      <li><label><input type="radio" name="q4" value="a"> Android certificates expire before a CA would have time to sign them</label></li>
+      <li><label><input type="radio" name="q4" value="b"> Firebase only checks if the fingerprint matches what you registered</label></li>
+      <li><label><input type="radio" name="q4" value="c"> Google Play acts as the CA and signs all Android certificates</label></li>
+      <li><label><input type="radio" name="q4" value="d"> The SHA algorithm makes CA signatures mathematically redundant</label></li>
+    </ul>
+    <button class="quiz-btn" onclick="checkQ('q4','b','Firebase does not care who you are in the real world — it only checks that the fingerprint of the certificate that signed the APK matches what the developer pre-registered. Identity is \'matches the registered key\', not \'vouched for by a CA\'.')">Check</button>
+    <div class="quiz-feedback" id="q4-feedback"></div>
+  </div>
+
+  <!-- ────────────────────────────────────── -->
+  <div class="callout win">
+    <div class="callout-title">What you just learned</div>
+    Public-key cryptography is two linked keys: private (sign / keep secret) and public
+    (verify / share freely). keytool generates both and wraps the public key in a self-signed
+    certificate. The fingerprint is the SHA hash of that certificate. A MITM stealing the
+    certificate gets nothing — the private key is the secret. SSH uses the same idea in both
+    directions: you authenticate to the server, and the server authenticates to you.
+  </div>
+
+  <!-- ────────────────────────────────────── -->
+  <div class="lesson-footer">
+    <p>
+      <strong>Recommended primary source:</strong>
+      <a href="https://www.youtube.com/watch?v=AQDCe585Lnc" target="_blank">
+        Computerphile — Public Key Cryptography (YouTube, 6 min)
+      </a> — the clearest visual walkthrough of why the math works.
+    </p>
+    <p style="margin-top:0.75rem">
+      <strong>Natural next questions to ask your teacher:</strong><br/>
+      "What is Google Play App Signing and how does it change which fingerprint I give Firebase?" <br/>
+      "What is a Certificate Authority and when do I actually need one?"<br/>
+      "How does SSH key authentication work step by step when I run gcloud compute ssh?"
+    </p>
+    <p style="margin-top:0.75rem; color:#888">
+      Confused about anything? Ask your agent — type <code>/teach me [the thing that's unclear]</code>.
+    </p>
+  </div>
+
+</div>
+<script>
+function checkQ(qId, correct, explanation) {
+  const selected = document.querySelector(`input[name="${qId}"]:checked`);
+  const fb = document.getElementById(`${qId}-feedback`);
+  if (!selected) { fb.style.display='block'; fb.className='quiz-feedback incorrect'; fb.textContent='Please select an answer first.'; return; }
+  fb.style.display = 'block';
+  if (selected.value === correct) {
+    fb.className = 'quiz-feedback correct';
+    fb.textContent = '✓ Correct. ' + explanation;
+  } else {
+    fb.className = 'quiz-feedback incorrect';
+    fb.textContent = '✗ Not quite. ' + explanation;
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Money Tracker — Learning Notes</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+  <style>
+    .card-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      text-decoration: none;
+      color: var(--text);
+      display: block;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .card:hover { border-color: var(--accent); background: var(--accent-light); text-decoration: none; }
+    .card-label {
+      font-family: var(--font-sans);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+    }
+    .card-title {
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 1rem;
+      color: var(--accent);
+    }
+    .card-desc {
+      font-family: var(--font-sans);
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin-top: 0.2rem;
+    }
+  </style>
+</head>
+<body>
+<div class="lesson-container">
+
+  <div class="lesson-header">
+    <div class="lesson-number">Money Tracker Project</div>
+    <h1>Learning Notes</h1>
+    <p class="lesson-subtitle">Lessons and references from building this app — readable from any browser.</p>
+  </div>
+
+  <h2>Lessons</h2>
+  <div class="card-grid">
+    <a class="card" href="lessons/0001-sha-fingerprints-what-and-why.html">
+      <div class="card-label">Lesson 1 · Cryptography</div>
+      <div class="card-title">SHA Fingerprints: What &amp; Why</div>
+      <div class="card-desc">What a SHA-1 fingerprint is, why Firebase requires one, and what happens if it's wrong.</div>
+    </a>
+    <a class="card" href="lessons/0002-public-key-cryptography.html">
+      <div class="card-label">Lesson 2 · Cryptography</div>
+      <div class="card-title">Public-Key Cryptography</div>
+      <div class="card-desc">How asymmetric keys work, APK signing, and the certificate chain.</div>
+    </a>
+    <a class="card" href="lessons/0003-firebase-setup-complete-picture.html">
+      <div class="card-label">Lesson 3 · Firebase</div>
+      <div class="card-title">Firebase Setup: The Complete Picture</div>
+      <div class="card-desc">7-step cloud setup, Flutter packages, AuthService, AppProvider auth state, Firestore patterns.</div>
+    </a>
+  </div>
+
+  <h2>Reference Sheets</h2>
+  <div class="card-grid">
+    <a class="card" href="reference/cryptography-reference.html">
+      <div class="card-label">Reference · Cryptography</div>
+      <div class="card-title">Cryptography Cheat Sheet</div>
+      <div class="card-desc">Hash properties, APK signing flow, SHA commands.</div>
+    </a>
+    <a class="card" href="reference/firebase-setup-reference.html">
+      <div class="card-label">Reference · Firebase</div>
+      <div class="card-title">Firebase Setup Cheat Sheet</div>
+      <div class="card-desc">Setup checklist, Auth pattern, Firestore patterns, security rules.</div>
+    </a>
+  </div>
+
+  <div class="lesson-footer">
+    <p>Part of the <a href="MISSION.md">Money Tracker</a> project.</p>
+  </div>
+
+</div>
+</body>
+</html>
