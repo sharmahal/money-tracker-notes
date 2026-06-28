@@ -438,6 +438,29 @@ service cloud.firestore {
 
   <p>Two checks: <strong>(1)</strong> the request must be authenticated (logged in), and <strong>(2)</strong> the Firebase UID of the logged-in user must match the <code>{uid}</code> in the document path. This means each user can only read and write their own subtree. Without this, anyone with your app's credentials could read anyone's data.</p>
 
+  <h3>Q: When we make a db call, is <code>request.auth != null</code> where the JWT helps?</h3>
+
+  <p>Yes, exactly. The JWT that the SDK attached to the request is what makes <code>request.auth</code> non-null. Without a signed-in user there is no JWT, so <code>request.auth</code> is <code>null</code> and the first check immediately fails — Firestore returns a 403 before even looking at the path.</p>
+
+  <div class="diagram" style="text-align:left; line-height:2.2;">
+    Signed in → SDK has JWT → attached to request → <code>request.auth</code> is populated → rule passes<br>
+    Not signed in → no JWT → nothing attached → <code>request.auth</code> is null → rule blocks (403)
+  </div>
+
+  <h3>Q: Where does the second <code>uid</code> in <code>request.auth.uid == uid</code> come from?</h3>
+
+  <p>There are two different <code>uid</code>s in that rule and they come from different places:</p>
+
+  <table>
+    <thead><tr><th>Side</th><th>What it is</th><th>Where it comes from</th></tr></thead>
+    <tbody>
+      <tr><td><code>request.auth.uid</code></td><td>Who you are</td><td>Decoded from the JWT by Firestore. The SDK provided it.</td></tr>
+      <tr><td><code>{uid}</code></td><td>What you're trying to touch</td><td>A path wildcard — captures whatever string is in the document URL. If your code calls <code>.doc('abc123')</code>, then <code>{uid}</code> = <code>'abc123'</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <p>The rule asks: <em>does who you are match what you're trying to touch?</em> Your app sets the path using the signed-in user's own UID, so both sides match. But if someone tampered with the app and tried <code>.doc('someoneElsesUid')</code>, the path wildcard would be a different UID, <code>request.auth.uid</code> would still be theirs, the comparison would fail, and Firestore would block it — even though the JWT itself was valid.</p>
+
   <!-- PROJECT FILES MAP -->
   <h2>Part 5 — Where it lives in this project</h2>
 
