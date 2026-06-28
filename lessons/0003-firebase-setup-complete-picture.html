@@ -366,6 +366,40 @@ await db.collection('users').doc(uid).set(
 );</code></pre>
   </div>
 
+  <h3>On whose behalf does the request go?</h3>
+
+  <p>When <code>.set()</code> runs, it goes on behalf of the <strong>signed-in user</strong> — not just the app. Here is how Firebase knows who the user is.</p>
+
+  <p>After <code>signInWithCredential()</code> succeeds, Firebase Auth issues the SDK a <strong>JWT (ID token)</strong> — a signed, tamper-proof string that encodes the user's UID, email, and expiry. The Firebase SDK stores this token on the device and automatically attaches it to every Firestore HTTP request in the <code>Authorization</code> header, invisibly, without any code from you.</p>
+
+  <div class="diagram" style="text-align:left; line-height:2.2;">
+    db.collection('users').doc(uid).set({...})<br>
+    &nbsp;&nbsp;↓ Firebase SDK builds an HTTP request<br>
+    &nbsp;&nbsp;↓ automatically adds: <strong>Authorization: Bearer &lt;ID token JWT&gt;</strong><br>
+    Firestore server receives request<br>
+    &nbsp;&nbsp;↓ decodes the JWT → reads <strong>request.auth.uid</strong><br>
+    &nbsp;&nbsp;↓ evaluates security rules: does uid match the doc path?<br>
+    &nbsp;&nbsp;↓ yes → write allowed &nbsp;/&nbsp; no → write rejected (403)
+  </div>
+
+  <div class="callout key">
+    <div class="callout-title">Two identity checks — app vs user</div>
+    <p>There are two separate checks in the Firebase flow, and they happen at different moments:</p>
+    <table style="margin-top:0.5rem;">
+      <thead><tr><th>Check</th><th>What it verifies</th><th>When</th><th>Mechanism</th></tr></thead>
+      <tbody>
+        <tr><td><strong>App identity</strong></td><td>Is this APK from the right developer?</td><td>Once, during Google Sign-In</td><td>SHA-1 fingerprint (Lesson 1)</td></tr>
+        <tr><td><strong>User identity</strong></td><td>Which user is making this request?</td><td>Every Firestore call</td><td>JWT ID token in the HTTP header</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:0.75rem;">The SHA-1 gets you past the door. The ID token tells Firebase which filing cabinet inside is yours.</p>
+  </div>
+
+  <div class="callout note">
+    <div class="callout-title">The ID token expires — the SDK handles it</div>
+    The JWT expires after <strong>1 hour</strong>. The Firebase SDK silently refreshes it in the background using a long-lived refresh token. You never call a refresh function — it just works. If the user is signed out, there is no token, so <code>request.auth</code> in security rules is <code>null</code> and every rule that checks <code>request.auth != null</code> will block the request.
+  </div>
+
   <div class="file-block">
     <div class="file-block-header">lib/services/sync_service.dart — read</div>
 <pre><code>// Read once
