@@ -204,6 +204,30 @@ class DatabaseService {
 
   // ── Transactions ────────────────────────────────────────────────────────────
 
+  Future<void> updateTransactionCategory(
+      int id, String category, String subCategory) async {
+    final database = await db;
+    await database.update(
+      'transactions',
+      {'category': category, 'subCategory': subCategory},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  // Updates category/subCategory for an existing active transaction by rawMessage,
+  // but only when the values actually differ (avoids unnecessary writes on every pull).
+  Future<void> syncCategoryByRawMessage(
+      String rawMessage, String category, String subCategory) async {
+    final database = await db;
+    await database.update(
+      'transactions',
+      {'category': category, 'subCategory': subCategory},
+      where: 'rawMessage = ? AND (category != ? OR subCategory != ?)',
+      whereArgs: [rawMessage, category, subCategory],
+    );
+  }
+
   Future<int> insert(Transaction t) async {
     final database = await db;
     return database.insert('transactions', t.toMap()..remove('id'));
@@ -261,6 +285,45 @@ class DatabaseService {
       final clean = Map<String, dynamic>.from(m)..remove('deletedAt');
       return Transaction.fromMap(clean);
     }).toList();
+  }
+
+  /// rawMessages from the deleted_transactions table only — used for sync.
+  Future<Set<String>> deletedRawMessages() async {
+    final database = await db;
+    final rows = await database.query('deleted_transactions',
+        columns: ['rawMessage'], where: 'rawMessage IS NOT NULL');
+    return rows.map((m) => m['rawMessage'] as String).toSet();
+  }
+
+  /// Inserts directly into deleted_transactions (used when pulling cloud deletions).
+  Future<void> insertDeleted(Transaction t) async {
+    final database = await db;
+    final map = t.toMap()..remove('id');
+    map['deletedAt'] = DateTime.now().millisecondsSinceEpoch;
+    await database.insert('deleted_transactions', map,
+        conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
+  /// Permanently removes a transaction from deleted_transactions (not recoverable).
+  /// After this, the next import can re-parse the same SMS fresh.
+  Future<void> permanentlyDeleteFromDeleted(int id) async {
+    final database = await db;
+    await database.delete('deleted_transactions', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Soft-deletes a transaction by rawMessage if it exists in active table.
+  /// No-op if it's already deleted or doesn't exist.
+  Future<void> softDeleteByRawMessage(String rawMessage) async {
+    final database = await db;
+    final rows = await database.query('transactions',
+        where: 'rawMessage = ?', whereArgs: [rawMessage]);
+    if (rows.isEmpty) return;
+    final map = Map<String, dynamic>.from(rows.first);
+    map['deletedAt'] = DateTime.now().millisecondsSinceEpoch;
+    await database.insert('deleted_transactions', map,
+        conflictAlgorithm: ConflictAlgorithm.ignore);
+    await database.delete('transactions',
+        where: 'rawMessage = ?', whereArgs: [rawMessage]);
   }
 
   /// All rawMessages in both active AND deleted tables — used for import dedup.

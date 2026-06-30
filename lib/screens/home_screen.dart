@@ -936,13 +936,49 @@ class _SyncSheetState extends State<_SyncSheet> {
               ),
             ],
             const SizedBox(height: 16),
-            TextButton(
-              onPressed: () async {
-                final nav = Navigator.of(context);
-                await provider.signOut();
-                if (mounted) nav.pop();
-              },
-              child: Text('Sign out', style: TextStyle(color: Colors.grey[500])),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TextButton(
+                  onPressed: () async {
+                    final nav = Navigator.of(context);
+                    await provider.signOut();
+                    if (mounted) nav.pop();
+                  },
+                  child: Text('Sign out', style: TextStyle(color: Colors.grey[500])),
+                ),
+                Text('·', style: TextStyle(color: Colors.grey[300])),
+                TextButton(
+                  onPressed: () async {
+                    final nav = Navigator.of(context);
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: const Text('Delete cloud data?'),
+                        content: const Text(
+                            'This permanently deletes all your synced data from the cloud. '
+                            'Your local transactions on this phone are unaffected. '
+                            'You will be signed out.'),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel')),
+                          TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Delete',
+                                  style: TextStyle(color: Colors.red))),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true && mounted) {
+                      await provider.deleteCloudData();
+                      nav.pop();
+                    }
+                  },
+                  child: const Text('Delete my cloud data',
+                      style: TextStyle(color: Colors.red, fontSize: 12)),
+                ),
+              ],
             ),
           ],
         ],

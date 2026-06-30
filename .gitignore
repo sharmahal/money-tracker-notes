@@ -41,6 +41,11 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+.metadata
+
+# iOS — CocoaPods artifacts (regenerate with: pod install)
+ios/Pods/
+ios/.symlinks/
 
 # Symbolication related
 app.*.symbols

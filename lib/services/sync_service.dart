@@ -30,34 +30,113 @@ class SyncService {
     final uid = _uid;
     final userDoc = _fs.collection('users').doc(uid);
 
-    final txns = await _db.queryAll();
-    final accounts = await _db.loadAccounts();
-    final rules = await _db.loadRules();
-    final categories = await _db.loadCustomCategories();
-
-    // Group transactions by YYYY-MM month key
-    final byMonth = <String, List<Map<String, dynamic>>>{};
-    for (final t in txns) {
-      final key = '${t.date.year}-${t.date.month.toString().padLeft(2, '0')}';
-      (byMonth[key] ??= []).add(_toCloud(t));
+    // Read current cloud state first so we merge rather than overwrite.
+    // Key structure: monthKey → rawMessage → transaction map.
+    final cloudSnap = await userDoc.collection('months').get();
+    final merged = <String, Map<String, Map<String, dynamic>>>{};
+    for (final doc in cloudSnap.docs) {
+      final list =
+          (doc.data()['transactions'] as List?)?.cast<Map<String, dynamic>>() ??
+              [];
+      merged[doc.id] = {
+        for (final t in list)
+          if (t['rawMessage'] != null) t['rawMessage'] as String: t,
+      };
     }
+
+    // Layer local transactions on top (local wins on conflict).
+    // Manual transactions (rawMessage == null) are local-only — not synced.
+    final txns = await _db.queryAll();
+    for (final t in txns) {
+      final raw = t.rawMessage;
+      if (raw == null) continue;
+      final key = '${t.date.year}-${t.date.month.toString().padLeft(2, '0')}';
+      (merged[key] ??= {})[raw] = _toCloud(t);
+    }
+
+    // Strip any cloud transactions that this device has soft-deleted.
+    // Without this, deleted transactions would survive in the cloud copy and
+    // re-appear on other devices after they pull.
+    final localDeleted = await _db.deletedRawMessages();
+    for (final monthMap in merged.values) {
+      monthMap.removeWhere((raw, _) => localDeleted.contains(raw));
+    }
+    merged.removeWhere((_, monthMap) => monthMap.isEmpty);
+
+    // Sync full deleted transaction data so other devices get them in their
+    // deleted list (Option A: deleted-months collection mirrors months structure).
+    final cloudDeletedSnap = await userDoc.collection('deleted-months').get();
+    final mergedDeleted = <String, Map<String, Map<String, dynamic>>>{};
+    for (final doc in cloudDeletedSnap.docs) {
+      final list =
+          (doc.data()['transactions'] as List?)?.cast<Map<String, dynamic>>() ??
+              [];
+      mergedDeleted[doc.id] = {
+        for (final t in list)
+          if (t['rawMessage'] != null) t['rawMessage'] as String: t,
+      };
+    }
+    final localDeletedTxns = await _db.getDeletedTransactions();
+    for (final t in localDeletedTxns) {
+      final raw = t.rawMessage;
+      if (raw == null) continue;
+      final key = '${t.date.year}-${t.date.month.toString().padLeft(2, '0')}';
+      (mergedDeleted[key] ??= {})[raw] = _toCloud(t);
+    }
+
+    final accounts = await _db.loadAccounts();
+    final localRules = await _db.loadRules();
+    final categories = await _db.loadCustomCategories();
 
     // Firestore batch (max 500 ops — well within limit for personal use)
     final batch = _fs.batch();
 
-    for (final entry in byMonth.entries) {
+    for (final entry in merged.entries) {
       batch.set(
         userDoc.collection('months').doc(entry.key),
-        {'transactions': entry.value},
+        {'transactions': entry.value.values.toList()},
+      );
+    }
+
+    for (final entry in mergedDeleted.entries) {
+      batch.set(
+        userDoc.collection('deleted-months').doc(entry.key),
+        {'transactions': entry.value.values.toList()},
       );
     }
 
     batch.set(userDoc.collection('data').doc('accounts'),
         {'items': accounts.map((a) => a.toMap()).toList()});
+
+    // Merge rules by id: start with cloud rules, local wins on conflict.
+    final rulesSnap = await userDoc.collection('data').doc('rules').get();
+    final cloudRules = <String, Map<String, dynamic>>{};
+    if (rulesSnap.exists) {
+      for (final r
+          in (rulesSnap.data()!['items'] as List).cast<Map<String, dynamic>>()) {
+        cloudRules[r['id'] as String] = r;
+      }
+    }
+    for (final r in localRules) {
+      cloudRules[r.id] = r.toMap();
+    }
     batch.set(userDoc.collection('data').doc('rules'),
-        {'items': rules.map((r) => r.toMap()).toList()});
+        {'items': cloudRules.values.toList()});
     batch.set(userDoc.collection('data').doc('categories'),
         {'items': categories.map((c) => c.toMap()).toList()});
+
+    // Merge deletions: union of cloud deleted rawMessages + local deleted rawMessages.
+    // This list only ever grows — deletions are permanent across devices.
+    final deletionsSnap =
+        await userDoc.collection('data').doc('deletions').get();
+    final cloudDeleted = <String>{};
+    if (deletionsSnap.exists) {
+      cloudDeleted.addAll(
+          ((deletionsSnap.data()!['rawMessages'] as List?) ?? [])
+              .cast<String>());
+    }
+    batch.set(userDoc.collection('data').doc('deletions'),
+        {'rawMessages': cloudDeleted.union(localDeleted).toList()});
     batch.set(
       userDoc,
       {'lastSyncedAt': FieldValue.serverTimestamp(), 'uid': uid},
@@ -66,9 +145,9 @@ class SyncService {
 
     await batch.commit();
 
-    final monthCount = byMonth.length;
+    final totalTxns = merged.values.fold(0, (acc, m) => acc + m.length);
     return SyncResult(
-        'Pushed ${txns.length} transactions across $monthCount months.');
+        'Pushed. Cloud now has $totalTxns transactions across ${merged.length} months.');
   }
 
   // ── Pull — cloud → local ──────────────────────────────────────────────────
@@ -77,9 +156,10 @@ class SyncService {
     final userDoc = _userDoc;
 
     final monthsSnap = await userDoc.collection('months').get();
+    final deletedMonthsSnap = await userDoc.collection('deleted-months').get();
     final dataSnap = await userDoc.collection('data').get();
 
-    // Parse all cloud transactions
+    // Parse all cloud active transactions
     final cloudTxns = <Transaction>[];
     for (final doc in monthsSnap.docs) {
       final list =
@@ -88,15 +168,14 @@ class SyncService {
       cloudTxns.addAll(list.map(_fromCloud));
     }
 
-    // Dedup against existing local data (rawMessage is the stable key).
-    // Manual transactions (rawMessage == null) are skipped to avoid duplicates.
-    final existing = await _db.allExistingRawMessages();
-    final fresh = cloudTxns.where((t) {
-      final raw = t.rawMessage;
-      if (raw == null) return false;
-      return !existing.contains(raw);
-    }).toList();
-    if (fresh.isNotEmpty) await _db.insertAll(fresh);
+    // Parse all cloud deleted transactions
+    final cloudDeletedTxns = <Transaction>[];
+    for (final doc in deletedMonthsSnap.docs) {
+      final list =
+          (doc.data()['transactions'] as List?)?.cast<Map<String, dynamic>>() ??
+              [];
+      cloudDeletedTxns.addAll(list.map(_fromCloud));
+    }
 
     // Helper to find a data doc
     Map<String, dynamic>? dataDoc(String id) {
@@ -105,6 +184,51 @@ class SyncService {
       } catch (_) {
         return null;
       }
+    }
+
+    // Fetch cloud deletion list before inserting so we never re-insert deleted txns.
+    final deletionsDoc = dataDoc('deletions');
+    final cloudDeleted = <String>{};
+    if (deletionsDoc != null) {
+      cloudDeleted.addAll(
+          ((deletionsDoc['rawMessages'] as List?) ?? []).cast<String>());
+    }
+
+    // Dedup against existing local data (rawMessage is the stable key).
+    // Also skip anything in the cloud deletion list.
+    // Manual transactions (rawMessage == null) are skipped to avoid duplicates.
+    final existing = await _db.allExistingRawMessages();
+    final fresh = cloudTxns.where((t) {
+      final raw = t.rawMessage;
+      if (raw == null) return false;
+      if (cloudDeleted.contains(raw)) return false;
+      return !existing.contains(raw);
+    }).toList();
+    if (fresh.isNotEmpty) await _db.insertAll(fresh);
+
+    // Propagate category changes to already-existing transactions.
+    // Covers the case where the user recategorized a transaction on another device
+    // and pushed — this device's copy gets updated to match (cloud wins on pull).
+    for (final t in cloudTxns) {
+      final raw = t.rawMessage;
+      if (raw == null) continue;
+      if (cloudDeleted.contains(raw)) continue;
+      if (existing.contains(raw)) {
+        await _db.syncCategoryByRawMessage(raw, t.category, t.subCategory);
+      }
+    }
+
+    // Apply cloud deletions to any active local transactions.
+    for (final raw in cloudDeleted) {
+      await _db.softDeleteByRawMessage(raw);
+    }
+
+    // Import cloud deleted transactions into local deleted list (Option A).
+    final existingDeleted = await _db.deletedRawMessages();
+    for (final t in cloudDeletedTxns) {
+      final raw = t.rawMessage;
+      if (raw == null) continue;
+      if (!existingDeleted.contains(raw)) await _db.insertDeleted(t);
     }
 
     // Accounts
@@ -132,6 +256,22 @@ class SyncService {
 
     return SyncResult(
         'Pulled ${fresh.length} new transactions (${cloudTxns.length} in cloud).');
+  }
+
+  // ── Delete all cloud data ─────────────────────────────────────────────────
+
+  static Future<void> deleteCloudData() async {
+    final userDoc = _userDoc;
+    final batch = _fs.batch();
+
+    for (final col in ['months', 'deleted-months', 'data']) {
+      final snap = await userDoc.collection(col).get();
+      for (final doc in snap.docs) {
+        batch.delete(doc.reference);
+      }
+    }
+    batch.delete(userDoc);
+    await batch.commit();
   }
 
   // ── Last synced timestamp ─────────────────────────────────────────────────

@@ -23,12 +23,12 @@ class Transaction {
     this.rawMessage,
   });
 
-  Transaction copyWith({int? id}) => Transaction(
+  Transaction copyWith({int? id, String? category, String? subCategory}) => Transaction(
         id: id ?? this.id,
         amount: amount,
         type: type,
-        category: category,
-        subCategory: subCategory,
+        category: category ?? this.category,
+        subCategory: subCategory ?? this.subCategory,
         merchant: merchant,
         description: description,
         date: date,

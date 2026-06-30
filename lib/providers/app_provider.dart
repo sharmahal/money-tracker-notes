@@ -66,6 +66,11 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> deleteCloudData() async {
+    await SyncService.deleteCloudData();
+    await signOut();
+  }
+
   Future<String> pushToCloud() async {
     _syncing = true;
     notifyListeners();
@@ -344,6 +349,19 @@ class AppProvider extends ChangeNotifier {
   Future<void> restoreTransaction(int id) async {
     await _db.restoreDeleted(id);
     await loadMonth(_selectedMonth);
+  }
+
+  Future<void> permanentlyDeleteFromDeleted(int id) => _db.permanentlyDeleteFromDeleted(id);
+
+  Future<void> recategorizeTransaction(
+      int id, String category, String subCategory) async {
+    await _db.updateTransactionCategory(id, category, subCategory);
+    final idx = _transactions.indexWhere((t) => t.id == id);
+    if (idx != -1) {
+      _transactions[idx] =
+          _transactions[idx].copyWith(category: category, subCategory: subCategory);
+      notifyListeners();
+    }
   }
 
   // ── Accounts ────────────────────────────────────────────────────────────────

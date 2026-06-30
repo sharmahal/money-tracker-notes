@@ -125,6 +125,10 @@ class _SmsDebugScreenState extends State<SmsDebugScreen>
                         await context.read<AppProvider>().restoreTransaction(id);
                         _load();
                       },
+                      onPermanentDelete: (id) async {
+                        await context.read<AppProvider>().permanentlyDeleteFromDeleted(id);
+                        _load();
+                      },
                     ),
                   ],
                 ),
@@ -259,8 +263,13 @@ class _SmsDebugTileState extends State<_SmsDebugTile> {
 class _DeletedListView extends StatelessWidget {
   final List<Transaction> transactions;
   final Future<void> Function(int id) onRestore;
+  final Future<void> Function(int id) onPermanentDelete;
 
-  const _DeletedListView({required this.transactions, required this.onRestore});
+  const _DeletedListView({
+    required this.transactions,
+    required this.onRestore,
+    required this.onPermanentDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -288,6 +297,7 @@ class _DeletedListView extends StatelessWidget {
       itemBuilder: (_, i) => _DeletedTile(
         transaction: transactions[i],
         onRestore: () => onRestore(transactions[i].id!),
+        onPermanentDelete: () => onPermanentDelete(transactions[i].id!),
       ),
     );
   }
@@ -296,8 +306,13 @@ class _DeletedListView extends StatelessWidget {
 class _DeletedTile extends StatefulWidget {
   final Transaction transaction;
   final Future<void> Function() onRestore;
+  final Future<void> Function() onPermanentDelete;
 
-  const _DeletedTile({required this.transaction, required this.onRestore});
+  const _DeletedTile({
+    required this.transaction,
+    required this.onRestore,
+    required this.onPermanentDelete,
+  });
 
   @override
   State<_DeletedTile> createState() => _DeletedTileState();
@@ -305,6 +320,7 @@ class _DeletedTile extends StatefulWidget {
 
 class _DeletedTileState extends State<_DeletedTile> {
   bool _restoring = false;
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -313,92 +329,171 @@ class _DeletedTileState extends State<_DeletedTile> {
     final meta = categoryMeta(t.category);
     final amountColor = isCredit ? const Color(0xFF10B981) : const Color(0xFFEF4444);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red.withValues(alpha: 0.15)),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 6,
-              offset: const Offset(0, 1)),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            // Category icon
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: meta.color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(meta.icon, color: meta.color, size: 18),
-            ),
-            const SizedBox(width: 12),
-
-            // Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return GestureDetector(
+      onTap: t.rawMessage != null ? () => setState(() => _expanded = !_expanded) : null,
+      onLongPress: t.rawMessage != null
+          ? () {
+              Clipboard.setData(ClipboardData(text: t.rawMessage!));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('Copied SMS body'), duration: Duration(seconds: 1)),
+              );
+            }
+          : null,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.withValues(alpha: 0.15)),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 6,
+                offset: const Offset(0, 1)),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Text(
-                    t.merchant == 'Unknown' ? t.subCategory : t.merchant,
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  // Category icon
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: meta.color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(meta.icon, color: meta.color, size: 18),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${t.category} · ${formatDate(t.date)}',
-                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  const SizedBox(width: 12),
+
+                  // Info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          t.merchant == 'Unknown' ? t.subCategory : t.merchant,
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${t.category} · ${formatDate(t.date)}',
+                          style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Amount + buttons
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${isCredit ? '+' : '-'}${formatAmount(t.amount)}',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 14, color: amountColor),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Remove permanently button
+                          SizedBox(
+                            height: 28,
+                            child: OutlinedButton(
+                              onPressed: () async {
+                                final confirmed = await showDialog<bool>(
+                                  context: context,
+                                  builder: (_) => AlertDialog(
+                                    title: const Text('Remove permanently?'),
+                                    content: const Text(
+                                        'This removes the transaction from the deleted list. '
+                                        'The SMS will be re-imported on next full scan.'),
+                                    actions: [
+                                      TextButton(
+                                          onPressed: () => Navigator.pop(context, false),
+                                          child: const Text('Cancel')),
+                                      TextButton(
+                                          onPressed: () => Navigator.pop(context, true),
+                                          child: const Text('Remove',
+                                              style: TextStyle(color: Colors.red))),
+                                    ],
+                                  ),
+                                );
+                                if (confirmed == true) await widget.onPermanentDelete();
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red,
+                                side: const BorderSide(color: Colors.red),
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(6)),
+                              ),
+                              child: const Text('Remove',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          // Add Back button
+                          SizedBox(
+                            height: 28,
+                            child: _restoring
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2))
+                                : FilledButton(
+                                    onPressed: () async {
+                                      setState(() => _restoring = true);
+                                      await widget.onRestore();
+                                    },
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFF4F46E5),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(6)),
+                                    ),
+                                    child: const Text('Add Back',
+                                        style: TextStyle(
+                                            fontSize: 11, fontWeight: FontWeight.w600)),
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ),
 
-            // Amount
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
+              // Expandable raw SMS body
+              if (t.rawMessage != null) ...[
+                const SizedBox(height: 8),
                 Text(
-                  '${isCredit ? '+' : '-'}${formatAmount(t.amount)}',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 14, color: amountColor),
+                  _expanded
+                      ? t.rawMessage!
+                      : (t.rawMessage!.length > 80
+                          ? '${t.rawMessage!.substring(0, 80)}…'
+                          : t.rawMessage!),
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500], height: 1.4),
                 ),
-                const SizedBox(height: 6),
-                // Add Back button
-                SizedBox(
-                  height: 28,
-                  child: _restoring
-                      ? const SizedBox(
-                          width: 16, height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : FilledButton(
-                          onPressed: () async {
-                            setState(() => _restoring = true);
-                            await widget.onRestore();
-                          },
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF4F46E5),
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(6)),
-                          ),
-                          child: const Text('Add Back',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                        ),
-                ),
+                if (t.rawMessage!.length > 80)
+                  Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.grey[400], size: 16),
               ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -360,6 +360,176 @@ class _QuickCategorizeSheetState extends State<_QuickCategorizeSheet> {
 
 // ─── Detail sheet ─────────────────────────────────────────────────────────────
 
+class _RecategorizeSheet extends StatefulWidget {
+  final Transaction transaction;
+  const _RecategorizeSheet({required this.transaction});
+
+  @override
+  State<_RecategorizeSheet> createState() => _RecategorizeSheetState();
+}
+
+class _RecategorizeSheetState extends State<_RecategorizeSheet> {
+  late String _selectedCategory;
+  late final TextEditingController _subCatCtrl;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCategory = widget.transaction.category;
+    _subCatCtrl = TextEditingController(text: widget.transaction.subCategory);
+  }
+
+  @override
+  void dispose() {
+    _subCatCtrl.dispose();
+    super.dispose();
+  }
+
+  bool get _canSave => _subCatCtrl.text.trim().isNotEmpty;
+
+  Future<void> _save() async {
+    if (!_canSave) return;
+    setState(() => _saving = true);
+    await context.read<AppProvider>().recategorizeTransaction(
+          widget.transaction.id!,
+          _selectedCategory,
+          _subCatCtrl.text.trim(),
+        );
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.all(Radius.circular(20)),
+      ),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Change category',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(
+              'Only this transaction is affected — no rule is created.',
+              style: TextStyle(fontSize: 13, color: Colors.grey[500], height: 1.4),
+            ),
+            const SizedBox(height: 16),
+
+            // Category grid
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: allCategories.map((cat) {
+                final m = categoryMeta(cat);
+                final selected = _selectedCategory == cat;
+                return GestureDetector(
+                  onTap: () => setState(() => _selectedCategory = cat),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? m.color.withValues(alpha: 0.15)
+                          : const Color(0xFFF9FAFB),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: selected ? m.color : const Color(0xFFE5E7EB),
+                        width: selected ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(m.icon,
+                            size: 15,
+                            color: selected ? m.color : Colors.grey[500]),
+                        const SizedBox(width: 6),
+                        Text(
+                          cat,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight:
+                                selected ? FontWeight.w600 : FontWeight.normal,
+                            color: selected ? m.color : Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+
+            const SizedBox(height: 16),
+            TextField(
+              controller: _subCatCtrl,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: 'Sub-category label',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFF4F46E5), width: 2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: _canSave && !_saving ? _save : null,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(50),
+                backgroundColor: const Color(0xFF4F46E5),
+              ),
+              child: _saving
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Text('Save',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+void _openRecategorize(BuildContext context, Transaction t) {
+  final provider = context.read<AppProvider>();
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => ChangeNotifierProvider.value(
+      value: provider,
+      child: _RecategorizeSheet(transaction: t),
+    ),
+  );
+}
+
 void _openQuickCategorize(BuildContext context, Transaction t) {
   final provider = context.read<AppProvider>();
   showModalBottomSheet(
@@ -508,12 +678,27 @@ class _TransactionDetailSheet extends StatelessWidget {
                     ),
                   ),
 
-                  // Quick categorize
+                  // Recategorize this transaction only
                   const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: () => _openRecategorize(context, t),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Change category (this transaction only)'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF4F46E5),
+                      side: const BorderSide(color: Color(0xFF4F46E5)),
+                      minimumSize: const Size.fromHeight(44),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+
+                  // Quick categorize (creates a rule for all future imports)
+                  const SizedBox(height: 8),
                   OutlinedButton.icon(
                     onPressed: () => _openQuickCategorize(context, t),
                     icon: const Icon(Icons.sell_outlined, size: 16),
-                    label: const Text('Quick categorize this payee'),
+                    label: const Text('Categorize all transactions like this'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF10B981),
                       side: const BorderSide(color: Color(0xFF10B981)),
