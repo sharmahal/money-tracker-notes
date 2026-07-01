@@ -1,4 +1,4 @@
-package com.moneytracker.money_tracker
+package com.cashtrace.app
 
 import android.Manifest
 import android.content.pm.PackageManager

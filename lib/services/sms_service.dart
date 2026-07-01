@@ -10,12 +10,30 @@ import 'currency_service.dart';
 
 String? _whySkipped(String body) {
   final lower = body.toLowerCase();
-  if (!lower.contains('debited') && !lower.contains('credited')) {
-    return 'no "debited" or "credited" keyword';
+
+  final hasDebited  = lower.contains('debited');
+  final hasCredited = lower.contains('credited');
+
+  // Future-tense notifications ("will be auto debited", "will be credited") are
+  // upcoming scheduled transactions, not actual ones — skip them.
+  if ((hasDebited || hasCredited) &&
+      (lower.contains('will be') || lower.contains('to be debited') ||
+       lower.contains('scheduled'))) {
+    return 'future/scheduled transaction — not yet processed';
   }
-  // Require either "bank" in the body (catches autopay messages from named banks)
-  // or a masked account/card number. This excludes wallet credits, mobile
-  // recharges, etc. while allowing "HDFC Bank autopay debited ₹300".
+
+  // "Auto pay … has been processed" and "EMI … processed" are real debits even
+  // though they don't say "debited". Accept if the message also mentions "bank"
+  // or a masked account number so we don't catch unrelated "processed" messages.
+  final hasProcessed = lower.contains('processed') &&
+      (lower.contains('auto') || lower.contains('autopay') ||
+       lower.contains('emi') || lower.contains('standing instruction'));
+
+  if (!hasDebited && !hasCredited && !hasProcessed) {
+    return 'no "debited", "credited", or autopay-processed keyword';
+  }
+
+  // Require either "bank" in the body or a masked account/card number.
   if (!lower.contains('bank') && extractLast4(body) == null) {
     return 'no bank indicator ("bank" keyword or masked account number)';
   }
@@ -123,6 +141,12 @@ TransactionType? _extractType(String msg) {
       lower.contains('deposited') || lower.contains('refund') ||
       lower.contains('transferred from')) {
     return TransactionType.credit;
+  }
+  // Auto pay / EMI / standing instruction "processed" → treat as debit
+  if (lower.contains('processed') &&
+      (lower.contains('auto') || lower.contains('autopay') ||
+       lower.contains('emi') || lower.contains('standing instruction'))) {
+    return TransactionType.debit;
   }
   return null;
 }
@@ -237,6 +261,7 @@ class SmsService {
     int? sinceMs,
     Set<String> trackedLast4s = const {},
     List<CustomRule> customRules = const [],
+    String baseCurrency = 'INR',
     void Function(String status)? onStatus,
     void Function(int done, int total)? onProgress,
   }) async {
@@ -249,9 +274,16 @@ class SmsService {
     onStatus?.call('Read ${all.length} messages, filtering bank SMS…');
 
     // ── Phase 2: pre-filter ────────────────────────────────────────────────────
+    final smsExtractionRules = customRules.where((r) => r.ruleType == RuleType.smsExtraction).toList();
     final bankMessages = <_Sms>[];
     for (final sms in all) {
-      if (_whySkipped(sms.body) != null) continue;
+      if (_whySkipped(sms.body) != null) {
+        // A custom SMS extraction rule can rescue an otherwise-skipped message.
+        if (smsExtractionRules.any((r) => r.extractAmount(sms.body) != null)) {
+          bankMessages.add(sms);
+        }
+        continue;
+      }
       bankMessages.add(sms);
     }
 
@@ -281,9 +313,9 @@ class SmsService {
 
       double amount = extracted.amount;
       String desc = body.length > 120 ? body.substring(0, 120) : body;
-      if (extracted.currency != 'INR') {
-        amount = await CurrencyService().toInr(extracted.amount, extracted.currency);
-        desc = '[${extracted.currency} ${extracted.amount.toStringAsFixed(2)} → ₹${amount.toStringAsFixed(0)}] $desc';
+      if (extracted.currency != baseCurrency) {
+        amount = await CurrencyService().convert(extracted.amount, extracted.currency, baseCurrency);
+        desc = '[${extracted.currency} ${extracted.amount.toStringAsFixed(2)} → $baseCurrency ${amount.toStringAsFixed(0)}] $desc';
       }
 
       String? customMerchant;
@@ -354,30 +386,56 @@ class SmsService {
     DateTime month, {
     Set<String> trackedLast4s = const {},
     List<CustomRule> customRules = const [],
+    String baseCurrency = 'INR',
   }) async {
     if (!Platform.isAndroid) return [];
 
+    final smsExtractionRules = customRules.where((r) => r.ruleType == RuleType.smsExtraction).toList();
     final results = <Transaction>[];
     for (final sms in await _readMonth(month)) {
       final body = sms.body;
-      if (_whySkipped(body) != null) continue;
+      if (_whySkipped(body) != null) {
+        if (smsExtractionRules.any((r) => r.extractAmount(body) != null)) {
+          // rescued by custom extraction rule — fall through
+        } else {
+          continue;
+        }
+      }
 
       if (trackedLast4s.isNotEmpty) {
         final last4 = extractLast4(body);
         if (last4 != null && !trackedLast4s.contains(last4)) continue;
       }
 
-      final extracted = _extractAmountWithCurrency(body);
+      var extracted = _extractAmountWithCurrency(body);
+      CustomRule? matchedSmsRule;
+      if (extracted == null) {
+        for (final rule in customRules.where((r) => r.ruleType == RuleType.smsExtraction)) {
+          final amt = rule.extractAmount(body);
+          if (amt != null) {
+            extracted = (amount: amt, currency: baseCurrency);
+            matchedSmsRule = rule;
+            break;
+          }
+        }
+      }
       if (extracted == null) continue;
 
-      final type = _extractType(body);
+      TransactionType? type;
+      if (matchedSmsRule != null) {
+        type = matchedSmsRule.forcedType == 'credit'
+            ? TransactionType.credit
+            : TransactionType.debit;
+      } else {
+        type = _extractType(body);
+      }
       if (type == null) continue;
 
       double amount = extracted.amount;
       String desc = body.length > 120 ? body.substring(0, 120) : body;
-      if (extracted.currency != 'INR') {
-        amount = await CurrencyService().toInr(extracted.amount, extracted.currency);
-        desc = '[${extracted.currency} ${extracted.amount.toStringAsFixed(2)} → ₹${amount.toStringAsFixed(0)}] $desc';
+      if (extracted.currency != baseCurrency) {
+        amount = await CurrencyService().convert(extracted.amount, extracted.currency, baseCurrency);
+        desc = '[${extracted.currency} ${extracted.amount.toStringAsFixed(2)} → $baseCurrency ${amount.toStringAsFixed(0)}] $desc';
       }
 
       String? customMerchant;
@@ -411,11 +469,14 @@ class SmsService {
 
   /// Full diagnostic — every SMS in the month, annotated with why it was
   /// skipped or what was parsed from it.
-  Future<List<SmsDebugEntry>> diagnose(DateTime month) async {
+  /// [month] null = all available bank SMS; non-null = that calendar month only.
+  Future<List<SmsDebugEntry>> diagnose({DateTime? month}) async {
     if (!Platform.isAndroid) return [];
 
+    final smsList = month != null ? await _readMonth(month) : await _readNative();
+
     final entries = <SmsDebugEntry>[];
-    for (final sms in await _readMonth(month)) {
+    for (final sms in smsList) {
       final body = sms.body;
       final sender = sms.address;
       final date = sms.date;
@@ -448,6 +509,9 @@ class SmsService {
         merchant: (extracted != null && type != null) ? _extractMerchant(body) : null,
       ));
     }
+
+    // Newest first.
+    entries.sort((a, b) => b.date.compareTo(a.date));
     return entries;
   }
 }

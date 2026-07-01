@@ -1,4 +1,4 @@
-enum RuleType { merchantExtraction, categorization }
+enum RuleType { merchantExtraction, categorization, smsExtraction }
 
 class CustomRule {
   final String id;
@@ -43,6 +43,29 @@ class CustomRule {
         ruleType: RuleType.merchantExtraction,
         prefix: _clean(prefix),
         terminator: _clean(terminator),
+        createdAt: DateTime.now(),
+      );
+
+  /// Rule that teaches the parser how to extract an amount from an otherwise
+  /// unrecognized message format.
+  ///
+  /// [prefix]   — text just before the amount (e.g. "Auto pay of INR ")
+  /// [terminator] — text just after the amount (e.g. " for") — optional
+  /// [keywords] — extra must-contain strings to narrow message matching
+  /// [forcedType] — 'debit' or 'credit' stored in [subCategory]
+  factory CustomRule.smsExtraction({
+    required String? prefix,
+    String? terminator,
+    List<String> keywords = const [],
+    required String forcedType,
+  }) =>
+      CustomRule(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        ruleType: RuleType.smsExtraction,
+        prefix: _clean(prefix),
+        terminator: _clean(terminator),
+        keywords: keywords,
+        subCategory: forcedType, // 'debit' or 'credit'
         createdAt: DateTime.now(),
       );
 
@@ -125,6 +148,44 @@ class CustomRule {
     return keywords.any((kw) => kw.isNotEmpty && lowerWindow.contains(kw.toLowerCase()));
   }
 
+  // ── SMS extraction logic ────────────────────────────────────────────────────
+
+  /// For [RuleType.smsExtraction]: the forced transaction type.
+  String? get forcedType =>
+      ruleType == RuleType.smsExtraction ? subCategory : null;
+
+  /// Returns the extracted amount from [message] using this rule's prefix/
+  /// terminator, or null if the rule doesn't match.
+  double? extractAmount(String message) {
+    if (ruleType != RuleType.smsExtraction || !isEnabled) return null;
+
+    // All keywords must appear in the message.
+    final lower = message.toLowerCase();
+    if (keywords.any((k) => k.isNotEmpty && !lower.contains(k.toLowerCase()))) {
+      return null;
+    }
+
+    // Find the window to search for the amount.
+    String window;
+    if (prefix != null) {
+      final idx = lower.indexOf(prefix!.toLowerCase());
+      if (idx == -1) return null;
+      window = message.substring(idx + prefix!.length);
+    } else {
+      window = message;
+    }
+
+    if (terminator != null) {
+      final end = window.toLowerCase().indexOf(terminator!.toLowerCase());
+      if (end != -1) window = window.substring(0, end);
+    }
+
+    // Extract the first number (with optional commas and up to 2 decimal places).
+    final m = RegExp(r'([\d,]+(?:\.\d{1,2})?)').firstMatch(window.trim());
+    if (m == null) return null;
+    return double.tryParse(m.group(1)!.replaceAll(',', ''));
+  }
+
   // ── Persistence ─────────────────────────────────────────────────────────────
 
   CustomRule copyWith({bool? isEnabled}) => CustomRule(
@@ -154,9 +215,14 @@ class CustomRule {
   factory CustomRule.fromMap(Map<String, dynamic> m) {
     final typeStr = m['ruleType'] as String? ?? 'merchantExtraction';
     final kwStr = m['keywords'] as String?;
+    final ruleType = switch (typeStr) {
+      'categorization' => RuleType.categorization,
+      'smsExtraction'  => RuleType.smsExtraction,
+      _                => RuleType.merchantExtraction,
+    };
     return CustomRule(
       id: m['id'] as String,
-      ruleType: typeStr == 'categorization' ? RuleType.categorization : RuleType.merchantExtraction,
+      ruleType: ruleType,
       prefix: m['prefix'] as String?,
       terminator: m['terminator'] as String?,
       keywords: (kwStr == null || kwStr.isEmpty)

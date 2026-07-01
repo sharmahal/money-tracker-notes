@@ -1,5 +1,5 @@
 name: money_tracker
-description: Track monthly credits and debits with AI-powered SMS categorization.
+description: CashTrace - Easy money tracking via SMS. Auto-categorizes bank transactions.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -21,6 +21,8 @@ dependencies:
   firebase_auth: ^5.0.0
   cloud_firestore: ^5.0.0
   google_sign_in: ^6.1.0
+  google_fonts: ^6.3.2
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:

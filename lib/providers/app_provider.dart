@@ -12,6 +12,7 @@ import '../services/auth_service.dart';
 import '../services/database_service.dart';
 import '../services/sms_service.dart';
 import '../services/sync_service.dart';
+import '../utils/formatters.dart';
 
 class AppProvider extends ChangeNotifier {
   final _db = DatabaseService();
@@ -25,6 +26,7 @@ class AppProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   bool _includeNoAccount = false;
+  String _baseCurrency = 'INR';
 
   // ── Auth & sync state ─────────────────────────────────────────────────────
   User? _currentUser;
@@ -111,6 +113,7 @@ class AppProvider extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
   bool get includeNoAccount => _includeNoAccount;
+  String get baseCurrency => _baseCurrency;
 
   void _syncCategoryRegistry() {
     updateCategoryRegistry({
@@ -123,6 +126,16 @@ class AppProvider extends ChangeNotifier {
   Future<void> loadCustomCategories() async {
     _customCategories = await _db.loadCustomCategories();
     _syncCategoryRegistry();
+    final savedCurrency = await _db.getSetting('baseCurrency') ?? 'INR';
+    _baseCurrency = savedCurrency;
+    configureCurrency(savedCurrency);
+    notifyListeners();
+  }
+
+  Future<void> setCurrency(String code) async {
+    _baseCurrency = code;
+    configureCurrency(code);
+    await _db.setSetting('baseCurrency', code);
     notifyListeners();
   }
 
@@ -281,6 +294,7 @@ class AppProvider extends ChangeNotifier {
         sinceMs: sinceMs,
         trackedLast4s: trackedLast4s,
         customRules: enabledRules,
+        baseCurrency: _baseCurrency,
         onStatus: (status) {
           _importStatus = status;
           _importProgress = null; // indeterminate until parse phase begins

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/category_info.dart';
+import '../models/currency_info.dart';
 import '../models/transaction.dart';
 import '../providers/app_provider.dart';
 import '../utils/formatters.dart';
+import '../widgets/hero_card.dart';
 import '../widgets/month_selector.dart';
-import '../widgets/summary_cards.dart';
+import '../widgets/shimmer_placeholders.dart';
 import '../widgets/spending_pie_chart.dart';
 import '../widgets/category_tile.dart';
 import '../widgets/transaction_tile.dart';
@@ -14,8 +16,11 @@ import 'add_transaction_screen.dart';
 import 'category_detail_screen.dart';
 import 'custom_rules_screen.dart';
 import 'manage_categories_screen.dart';
+import 'onboarding_screen.dart';
 import 'sms_debug_screen.dart';
 import 'trends_screen.dart';
+
+enum _AppMenu { accounts, rules, categories, currency, debug, onboarding }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -105,96 +110,111 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  void _showCurrencyPicker(AppProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) {
+        String selected = provider.baseCurrency;
+        return StatefulBuilder(
+          builder: (ctx, setState) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Currency',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text('Amounts will be displayed in the selected currency.',
+                      style: TextStyle(fontSize: 13, color: Colors.grey[500])),
+                  const SizedBox(height: 12),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(ctx).size.height * 0.5,
+                    ),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: kCurrencies.map((c) {
+                        final isSelected = c.code == selected;
+                        return ListTile(
+                          leading: Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(0xFF4F46E5).withValues(alpha: 0.1)
+                                  : Colors.grey.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Center(
+                              child: Text(c.symbol.trim(),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: isSelected
+                                      ? const Color(0xFF4F46E5)
+                                      : Colors.grey[600],
+                                ),
+                              ),
+                            ),
+                          ),
+                          title: Text(c.name,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: isSelected
+                                    ? const Color(0xFF4F46E5)
+                                    : const Color(0xFF1F2937),
+                              )),
+                          subtitle: Text(c.code,
+                              style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+                          trailing: isSelected
+                              ? const Icon(Icons.check_circle,
+                                  color: Color(0xFF4F46E5))
+                              : null,
+                          onTap: () async {
+                            setState(() => selected = c.code);
+                            await provider.setCurrency(c.code);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Money Tracker'),
+        title: const Text('CashTrace'),
         actions: [
-          // Accounts — badge shows how many are tracked
-          Stack(
-            alignment: Alignment.topRight,
-            children: [
-              IconButton(
-                tooltip: 'Bank accounts',
-                icon: const Icon(Icons.account_balance_outlined),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ChangeNotifierProvider.value(
-                      value: provider,
-                      child: const AccountSelectionScreen(),
-                    ),
-                  ),
-                ),
-              ),
-              if (provider.accounts.isNotEmpty)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF10B981),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      '${provider.accounts.where((a) => a.isTracked).length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
           IconButton(
             tooltip: 'Import from SMS',
             icon: const Icon(Icons.sms_outlined),
             onPressed: provider.loading ? null : _importSMS,
-          ),
-          IconButton(
-            tooltip: 'Extraction rules',
-            icon: const Icon(Icons.tune),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ChangeNotifierProvider.value(
-                  value: provider,
-                  child: const CustomRulesScreen(),
-                ),
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Manage categories',
-            icon: const Icon(Icons.category_outlined),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ChangeNotifierProvider.value(
-                  value: provider,
-                  child: const ManageCategoriesScreen(),
-                ),
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Diagnose SMS',
-            icon: const Icon(Icons.bug_report_outlined),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ChangeNotifierProvider.value(
-                  value: provider,
-                  child: SmsDebugScreen(month: provider.selectedMonth),
-                ),
-              ),
-            ),
           ),
           IconButton(
             tooltip: 'Add transaction',
@@ -216,6 +236,98 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   )
                 : const Icon(Icons.cloud_outlined),
             onPressed: () => _showSyncSheet(provider),
+          ),
+          PopupMenuButton<_AppMenu>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (item) {
+              switch (item) {
+                case _AppMenu.accounts:
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ChangeNotifierProvider.value(
+                      value: provider, child: const AccountSelectionScreen()),
+                  ));
+                case _AppMenu.rules:
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ChangeNotifierProvider.value(
+                      value: provider, child: const CustomRulesScreen()),
+                  ));
+                case _AppMenu.categories:
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ChangeNotifierProvider.value(
+                      value: provider, child: const ManageCategoriesScreen()),
+                  ));
+                case _AppMenu.currency:
+                  _showCurrencyPicker(provider);
+                case _AppMenu.debug:
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ChangeNotifierProvider.value(
+                      value: provider,
+                      child: SmsDebugScreen(initialMonth: provider.selectedMonth)),
+                  ));
+                case _AppMenu.onboarding:
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ChangeNotifierProvider.value(
+                      value: provider,
+                      child: const OnboardingScreen(isReview: true)),
+                  ));
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: _AppMenu.accounts,
+                child: ListTile(
+                  leading: Icon(Icons.account_balance_outlined),
+                  title: Text('Bank accounts'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              PopupMenuItem(
+                value: _AppMenu.rules,
+                child: ListTile(
+                  leading: Icon(Icons.tune),
+                  title: Text('Extraction rules'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              PopupMenuItem(
+                value: _AppMenu.categories,
+                child: ListTile(
+                  leading: Icon(Icons.category_outlined),
+                  title: Text('Manage categories'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              PopupMenuItem(
+                value: _AppMenu.currency,
+                child: ListTile(
+                  leading: Icon(Icons.currency_exchange_outlined),
+                  title: Text('Currency'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              PopupMenuItem(
+                value: _AppMenu.debug,
+                child: ListTile(
+                  leading: Icon(Icons.bug_report_outlined),
+                  title: Text('SMS diagnostic'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              PopupMenuItem(
+                value: _AppMenu.onboarding,
+                child: ListTile(
+                  leading: Icon(Icons.auto_stories_outlined),
+                  title: Text('How it works'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+            ],
           ),
           const SizedBox(width: 4),
         ],
@@ -326,18 +438,23 @@ class _OverviewTabState extends State<_OverviewTab> {
     );
     final effectiveDebit = filteredTotals.values.fold(0.0, (s, v) => s + v);
 
+    final isFirstLoad = provider.loading && provider.transactions.isEmpty;
+
     return RefreshIndicator(
       onRefresh: () => provider.loadMonth(provider.selectedMonth),
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          // Summary cards (debit reflects active categories only)
-          SummaryCards(
-            credit: provider.totalCredit,
-            debit: effectiveDebit,
-            onCreditTap: widget.onCreditTap,
-            onDebitTap: widget.onDebitTap,
-          ),
+          // Hero card — shimmer when first loading, real data otherwise
+          if (isFirstLoad)
+            const ShimmerHeroCard()
+          else
+            HeroCard(
+              credit: provider.totalCredit,
+              debit: effectiveDebit,
+              onCreditTap: widget.onCreditTap,
+              onDebitTap: widget.onDebitTap,
+            ),
 
           // Spending chart + category filter chips
           if (allCategoryTotals.isNotEmpty) ...[
@@ -448,18 +565,17 @@ class _OverviewTabState extends State<_OverviewTab> {
             ),
           ],
 
-          // Net savings (uses effectiveDebit)
-          if (provider.transactions.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: _NetSavingsCard(
-                credit: provider.totalCredit,
-                debit: effectiveDebit,
+          // Category list
+          if (isFirstLoad) ...[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
+              child: Text(
+                'By Category',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF1F2937)),
               ),
             ),
-
-          // Category list (only included categories)
-          if (filteredTotals.isNotEmpty) ...[
+            for (var i = 0; i < 4; i++) const ShimmerCategoryTile(),
+          ] else if (filteredTotals.isNotEmpty) ...[
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
               child: Text(
@@ -493,55 +609,6 @@ class _OverviewTabState extends State<_OverviewTab> {
   }
 }
 
-class _NetSavingsCard extends StatelessWidget {
-  final double credit;
-  final double debit;
-
-  const _NetSavingsCard({required this.credit, required this.debit});
-
-  @override
-  Widget build(BuildContext context) {
-    final net = credit - debit;
-    final isPositive = net >= 0;
-    final color = isPositive ? const Color(0xFF10B981) : const Color(0xFFEF4444);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isPositive ? Icons.savings_outlined : Icons.warning_amber_outlined,
-            color: color,
-            size: 22,
-          ),
-          const SizedBox(width: 12),
-          Text(
-            isPositive ? 'Net Savings' : 'Overspent',
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
-          ),
-          const Spacer(),
-          Text(
-            '${isPositive ? '+' : ''}${formatAmount(net)}',
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w800,
-              fontSize: 18,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _EmptyState extends StatelessWidget {
   final DateTime month;
